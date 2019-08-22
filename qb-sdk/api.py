@@ -7,8 +7,8 @@ class Api(object):
     brand_address_private_key: str
     token_symbol: str
     def __init__(self, api_key: str, brand_address_private_key: str, token_symbol: str):
-        """The :class:`Api` object, represents a connection to the Qiibee API which facilitates
-         executing reads and transactions on the Qiibee blockchain.
+        """The :class:`Api` object, represents a connection to the qiibee API which facilitates
+         executing reads and transactions on the qiibee blockchain.
 
 
         :param str api_key: The brand API key (secret)

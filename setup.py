@@ -10,7 +10,7 @@ setuptools.setup(
     version="0.0.1",
     author="qiibee",
     author_email="tech@qiibee.com",
-    description="Qiibee loyalty blockchain brand SDK",
+    description="qiibee loyalty blockchain brand SDK",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/qiibee/qb-sdk-python",
@@ -23,5 +23,5 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    keywords=['qiibee', 'api', 'sdk', 'blockchain', 'loyalty']
+    keywords=['qiibee', 'api', 'sdk', 'blockchain', 'loyalty', 'QBX']
 )
