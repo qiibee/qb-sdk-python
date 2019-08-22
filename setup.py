@@ -8,7 +8,7 @@ requirements_file = 'requirements.txt'
 setuptools.setup(
     name="qb-sdk",
     version="0.0.1",
-    author="Qiibee",
+    author="qiibee",
     author_email="tech@qiibee.com",
     description="A small example package",
     long_description="SDK for brands to access the qiibee loyalty blockchain.",
