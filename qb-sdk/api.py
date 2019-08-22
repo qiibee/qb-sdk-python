@@ -1,4 +1,11 @@
 import logging
+from enum import Enum
+import requests
+
+
+class Mode(Enum):
+    SANDBOX = 'sandbox'
+    LIVE = 'live'
 
 log = logging.getLogger(__name__)
 
@@ -6,7 +13,8 @@ class Api(object):
     api_key: str
     brand_address_private_key: str
     token_symbol: str
-    def __init__(self, api_key: str, brand_address_private_key: str, token_symbol: str):
+    mode: str
+    def __init__(self, api_key: str, brand_address_private_key: str, token_symbol: str, mode=Mode.SANDBOX):
         """The :class:`Api` object, represents a connection to the qiibee API which facilitates
          executing reads and transactions on the qiibee blockchain.
 
