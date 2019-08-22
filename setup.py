@@ -13,8 +13,10 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/qiibee/qb-sdk-python",
     packages=setuptools.find_packages(),
+    install_requires=['requests>=1.0.0'],
     classifiers=[
         "Programming Language :: Python :: 3",
+        'Programming Language :: Python :: 3.5',
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
