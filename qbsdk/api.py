@@ -1,5 +1,6 @@
 import logging
 from eth_keys import keys
+import eth_keys
 from eth_utils import decode_hex
 from enum import Enum
 import requests
@@ -102,10 +103,13 @@ class Api(object):
         self.mode = mode
         self.api_host = API_HOSTS[self.mode]
 
-        priv_key_bytes = decode_hex(brand_address_private_key)
-        priv_key = keys.PrivateKey(priv_key_bytes)
-        pub_key = priv_key.public_key
-        self.brand_address_public_key = pub_key
+        try:
+            priv_key_bytes = decode_hex(brand_address_private_key)
+            priv_key = keys.PrivateKey(priv_key_bytes)
+            pub_key = priv_key.public_key
+            self.brand_address_public_key = pub_key
+        except eth_keys.exceptions.ValidationError as e:
+            raise errors.ConfigError(str(e))
 
 
     def setup(self):
