@@ -4,7 +4,7 @@ import eth_keys
 from eth_utils import decode_hex
 from enum import Enum
 import requests
-from typing import Iterator
+from typing import Iterator, List, Dict
 import qbsdk.error as errors
 
 
@@ -22,18 +22,18 @@ API_HOSTS = {
 
 class Token(object):
     def __init__(self, json_object):
-        self.contract_address = json_object['contractAddress']
-        self.decimals = json_object['decimals']
-        self.description = json_object['description']
-        self.name = json_object['name']
-        self.rate = json_object['rate']
-        self.symbol = json_object['symbol']
-        self.total_supply = json_object['totalSupply']
+        self.contract_address: str = json_object['contractAddress']
+        self.decimals: int = json_object['decimals']
+        self.description: str = json_object['description']
+        self.name: str = json_object['name']
+        self.rate: int = json_object['rate']
+        self.symbol: str = json_object['symbol']
+        self.total_supply: int = json_object['totalSupply']
 
 class Tokens(object):
     def __init__(self, private, public):
-        self.public = public
-        self.private = private
+        self.public: List[Token] = public
+        self.private: List[Token] = private
 
 
 class TransactionState(Enum):
@@ -43,38 +43,39 @@ class TransactionState(Enum):
 
 class Transaction(object):
     def __init__(self, json_object):
-        self.block_hash = json_object['blockHash']
-        self.block_number = json_object['blockNumber']
-        self.chain_id = json_object['chainId'] if 'chainId' in json_object else None
-        self.from_address = json_object['from']
-        self.hash = json_object['hash']
-        self.input = json_object['input']
-        self.nonce = json_object['nonce']
-        self.to_address = json_object['to']
-        self.transaction_index = json_object['transactionIndex']
-        self.value = int(json_object['value'])
-        self.status = json_object['status']
-        self.contract = json_object['contract'] if 'contract' in json_object else json_object['contractAddress']
-        self.timestamp = json_object['timestamp']
-        self.confirms = json_object['confirms']
-        self.token = Token(json_object['token'])
-        self.state = TransactionState(json_object['state'])
+        self.block_hash: str = json_object['blockHash']
+        self.block_number: int = json_object['blockNumber']
+        self.chain_id: int = json_object['chainId'] if 'chainId' in json_object else None
+        self.from_address: str = json_object['from']
+        self.hash: str = json_object['hash']
+        self.input: str = json_object['input']
+        self.nonce: int = json_object['nonce']
+        self.to_address: str = json_object['to']
+        self.transaction_index: int = json_object['transactionIndex']
+        self.value: int = int(json_object['value'])
+        self.status: bool = json_object['status']
+        self.contract: str = json_object['contract'] if 'contract' in json_object else json_object['contractAddress']
+        self.timestamp: int = json_object['timestamp']
+        self.confirms: int = json_object['confirms']
+        self.token: Token = Token(json_object['token'])
+        self.state: TransactionState = TransactionState(json_object['state'])
 
 
 class Balance:
     balance: int
     def __init__(self, json_object):
-        self.balance = int(json_object['balance'])
-        self.contract_address = json_object['contractAddress']
+        self.balance: int = int(json_object['balance'])
+        self.contract_address: str = json_object['contractAddress']
 
 class Address:
     def __init__(self, json_object):
-        self.transaction_count = json_object['transactionCount']
+        self.transaction_count: int = json_object['transactionCount']
 
-        self.private_balances = {}
+        self.private_balances: Dict[str, Balance] = {}
         for symbol, json_balance in json_object['balances']['private'].items():
             self.private_balances[symbol] = Balance(json_balance)
 
+        self.public_balances: Dict[str, Balance] = None
         if 'public' in json_object['balances']:
             self.public_balances = {}
             for symbol, json_balance in json_object['balances']['public'].items():
@@ -84,11 +85,12 @@ class Address:
 class Api(object):
     api_key: str
     brand_address_private_key: str
+    brand_address_public_key: str
     token_symbol: str
     mode: Mode
     api_host: str
     brand_token: Token
-    def __init__(self, api_key: str, brand_address_private_key: str, token_symbol: str, mode=Mode.sandbox):
+    def __init__(self, api_key: str, brand_address_private_key: str, token_symbol: str, mode : Mode =Mode.sandbox):
         """The :class:`Api` object, represents a connection to the qiibee API which facilitates
          executing reads and transactions on the qiibee blockchain.
 
@@ -120,7 +122,7 @@ class Api(object):
         self.brand_token = token
 
 
-    def get_tokens(self, include_public_tokens=False) -> Tokens:
+    def get_tokens(self, include_public_tokens: bool =False) -> Tokens:
         query_params = '?public=true' if include_public_tokens else ''
         response = requests.get(f'{self.api_host}/tokens{query_params}')
         json_body = response.json()
@@ -129,7 +131,7 @@ class Api(object):
         return Tokens(private, public)
 
 
-    def __get_token(self, symbol) -> Token:
+    def __get_token(self, symbol: str) -> Token:
         tokens = self.get_tokens()
         matches = list(filter(lambda token: token.symbol == symbol, tokens.private))
         if len(matches) == 0:
@@ -164,3 +166,8 @@ class Api(object):
         response = requests.get(f'{self.api_host}/addresses/{address}')
         json_body = response.json()
         return Address(json_body)
+
+    def __get_nonce(self) -> int:
+        response = requests.get(f'{self.api_host}/addresses/{self.brand_address_public_key}/nonce')
+        json_body = response.json()
+        return json_body.nonce
