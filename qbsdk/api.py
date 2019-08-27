@@ -167,7 +167,12 @@ class Api(object):
         json_body = response.json()
         return Address(json_body)
 
-    def __get_nonce(self) -> int:
-        response = requests.get(f'{self.api_host}/addresses/{self.brand_address_public_key}/nonce')
+    def get_nonce(self) -> int:
+        response = requests.get(
+            f'{self.api_host}/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
+            headers={
+                'Authorization': f'Bearer {self.api_key}'
+            }
+        )
         json_body = response.json()
         return json_body.nonce
