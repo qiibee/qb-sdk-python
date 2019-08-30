@@ -1,4 +1,7 @@
 import logging
+
+import web3
+from web3 import Web3
 from eth_keys import keys
 import eth_keys
 from eth_utils import decode_hex
@@ -6,6 +9,7 @@ from enum import Enum
 import requests
 from typing import Iterator, List, Dict
 import qbsdk.error as errors
+import qbsdk.loyalty_token as loyalty_token
 
 
 log = logging.getLogger(__name__)
@@ -90,6 +94,7 @@ class Api(object):
     mode: Mode
     api_host: str
     brand_token: Token
+    loyalty_contract: web3.contract.Contract
     def __init__(self, api_key: str, brand_address_private_key: str, token_symbol: str, mode : Mode =Mode.sandbox):
         """The :class:`Api` object, represents a connection to the qiibee API which facilitates
          executing reads and transactions on the qiibee blockchain.
@@ -120,10 +125,17 @@ class Api(object):
         if token is None:
             raise errors.ConfigError(f'Token with symbol {self.token_symbol} does not exist.')
         self.brand_token = token
+        logging.info(f'Setting up web3 contract with contract address {token.contract_address}')
+
+        self.web3_connection = Web3()
+        checksummed_contract_address = Web3.toChecksumAddress(token.contract_address)
+        self.loyalty_contract = self.web3_connection.eth.contract(abi=loyalty_token.abi, address=checksummed_contract_address)
 
 
     def get_tokens(self, include_public_tokens: bool =False) -> Tokens:
-        query_params = '?public=true' if include_public_tokens else ''
+        query_params = f'?walletAddress={self.brand_address_public_key.to_checksum_address()}'
+        if include_public_tokens:
+            query_params += '&public=true'
         response = requests.get(f'{self.api_host}/tokens{query_params}')
         json_body = response.json()
         private = list(map(lambda json_token: Token(json_token), json_body['private']))
@@ -137,7 +149,7 @@ class Api(object):
         if len(matches) == 0:
             return None
         else:
-            return matches[1]
+            return matches[0]
 
 
     def get_transaction(self, tx_hash: str) -> Transaction:
@@ -167,6 +179,22 @@ class Api(object):
         json_body = response.json()
         return Address(json_body)
 
+    def send_transaction(self, to: str, value: int):
+        nonce = self.increment_and_get_nonce()
+        log.info(f'Executing transaction to: {to}, value: {value} nonce: {nonce}')
+
+        checksummed_to_address = Web3.toChecksumAddress(to)
+        tx = self.loyalty_contract.functions.transfer(checksummed_to_address, value).buildTransaction({
+            'nonce': nonce,
+            'gasPrice': 0,
+            'gas': 1000000,
+            'value': 0,
+            'chainId': 17225
+        })
+
+        signed_tx = self.web3_connection.eth.account.signTransaction(tx, self.brand_address_private_key)
+        return tx
+
     def get_nonce(self) -> int:
         response = requests.get(
             f'{self.api_host}/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
@@ -175,4 +203,28 @@ class Api(object):
             }
         )
         json_body = response.json()
-        return json_body.nonce
+        return json_body['nonce']
+
+    def put_nonce(self, nonce: int) -> int:
+        response = requests.put(
+            f'{self.api_host}/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
+            headers={
+                'Authorization': f'Bearer {self.api_key}'
+            },
+            data={
+                'nonce': nonce
+            }
+        )
+        json_body = response.json()
+        return json_body['nonce']
+
+    def increment_and_get_nonce(self):
+        response = requests.patch(
+            f'{self.api_host}/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
+            headers={
+                'Authorization': f'Bearer {self.api_key}'
+            }
+        )
+        json_body = response.json()
+        return json_body['nonce']
+
