@@ -47,21 +47,22 @@ class TransactionState(Enum):
 
 class Transaction(object):
     def __init__(self, json_object):
-        self.block_hash: str = json_object['blockHash']
-        self.block_number: int = json_object['blockNumber']
+
+        self.block_hash: str = json_object['blockHash'] if 'blockHash' in json_object else None
+        self.block_number: int = json_object['blockNumber'] if 'blockNumber' in json_object else None
         self.chain_id: int = json_object['chainId'] if 'chainId' in json_object else None
         self.from_address: str = json_object['from']
         self.hash: str = json_object['hash']
-        self.input: str = json_object['input']
+        self.input: str = json_object['input'] if 'input' in json_object else None
         self.nonce: int = json_object['nonce']
         self.to_address: str = json_object['to']
-        self.transaction_index: int = json_object['transactionIndex']
+        self.transaction_index: int = json_object['transactionIndex'] if 'transactionIndex' in json_object else None
         self.value: int = int(json_object['value'])
-        self.status: bool = json_object['status']
+        self.status: bool = json_object['status'] if 'status' in json_object else None
         self.contract: str = json_object['contract'] if 'contract' in json_object else json_object['contractAddress']
-        self.timestamp: int = json_object['timestamp']
-        self.confirms: int = json_object['confirms']
-        self.token: Token = Token(json_object['token'])
+        self.timestamp: int = json_object['timestamp'] if 'timestamp' in json_object else None
+        self.confirms: int = json_object['confirms'] if 'confirms' in json_object else None
+        self.token: Token = Token(json_object['token']) if 'token' in json_object else None
         self.state: TransactionState = TransactionState(json_object['state'])
 
 
@@ -193,7 +194,20 @@ class Api(object):
         })
 
         signed_tx = self.web3_connection.eth.account.signTransaction(tx, self.brand_address_private_key)
-        return tx
+
+        signed_tx_hex_string = signed_tx.rawTransaction.hex()
+        response = requests.post(f'{self.api_host}/transactions/',
+            headers={
+                'Authorization': f'Bearer {self.api_key}'
+            },
+            data={
+                'data': signed_tx_hex_string
+            }
+        )
+
+        json_body = response.json()
+        json_body.pop('status', None)
+        return Transaction(json_body)
 
     def get_nonce(self) -> int:
         response = requests.get(
@@ -219,8 +233,14 @@ class Api(object):
         return json_body['nonce']
 
     def increment_and_get_nonce(self):
+        payload = [{
+            'operation': 'replace',
+            'path': '/nonce',
+            'value': '++'
+        }]
         response = requests.patch(
             f'{self.api_host}/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
+            json=payload,
             headers={
                 'Authorization': f'Bearer {self.api_key}'
             }
