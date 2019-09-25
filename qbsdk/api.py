@@ -24,6 +24,8 @@ API_HOSTS = {
     Mode.live: "https://api.qiibee.com"
 }
 
+API_VERSION = '1.0.0'
+
 class Token(object):
     def __init__(self, json_object):
         self.contract_address: str = json_object['contractAddress']
@@ -86,6 +88,50 @@ class Address:
             for symbol, json_balance in json_object['balances']['public'].items():
                 self.public_balances[symbol] = Balance(json_balance)
 
+class Block:
+    def __init__(self, json_object):
+        self.author: str = json_object['author']
+        self.extra_data: str = json_object['extraData']
+        self.hash: str = json_object['hash']
+        self.miner: str = json_object['miner']
+        self.number: int = json_object['number']
+        self.parent_hash: int = json_object['parentHash']
+        self.seal_fields: int = json_object['receiptsRoot']
+        self.receipts_root: int = json_object['receiptsRoot']
+        self.seal_fields: List[str] = json_object['sealFields']
+        self.sha3_uncles: List[str] = json_object['sha3Uncles']
+        self.signature: str = json_object['signature']
+        self.size: int = json_object['size']
+        self.state_root: str = json_object['stateRoot']
+        self.step: str = json_object['step']
+        self.timestamp: str = json_object['timestamp']
+        self.transactions: List[str] = json_object['transactions']
+        self.transactions_root: str = json_object['transactionsRoot']
+        self.chain_id: str = json_object['chainId']
+
+
+
+
+def do_request(api_base_url: str, method: str, path: str, data=None, api_key=None):
+    headers = {
+        'ApiVersion': API_VERSION
+    }
+
+    if api_key is not None:
+        headers['Authorization'] = f'Bearer {api_key}'
+    response = requests.request(method, f'{api_base_url}{path}', data=data, headers=headers)
+    json_body = response.json()
+    if response.status_code == 400:
+        raise errors.InvalidRequestError(json_body['message'], 400)
+    if response.status_code == 404:
+        raise errors.NotFoundError(json_body['message'], 404)
+    if response.status_code == 403:
+        raise errors.AuthorizationError(json_body['message'], 403)
+
+    # if none of the above error codes match generically raise exception for the status
+    response.raise_for_status()
+    return json_body
+
 
 class Api(object):
     api_key: str
@@ -117,15 +163,31 @@ class Api(object):
             pub_key = priv_key.public_key
             self.brand_address_public_key = pub_key
         except eth_keys.exceptions.ValidationError as e:
-            raise errors.ConfigError(str(e))
+            raise errors.ConfigError(f'Invalid brand private key: {str(e)}')
+
+        # these are intialized during setup (I/O required)
+        self.brand_token: Token = None
+        self.chain_id: int = None
+        self.web3_connection: Web3 = None
+        self.loyalty_contract = None
 
 
     def setup(self):
+        """
+        Call this method before making calls to send_transaction to enable sending.
+        :return:
+        """
         log.info(f'Api connection configured to use token {self.token_symbol}')
         token = self.__get_token(self.token_symbol)
         if token is None:
             raise errors.ConfigError(f'Token with symbol {self.token_symbol} does not exist.')
         self.brand_token = token
+
+        log.info('Requesting blockchain network info..')
+
+        last_block = self.get_last_block()
+        self.chain_id = last_block.chain_id
+
         logging.info(f'Setting up web3 contract with contract address {token.contract_address}')
 
         self.web3_connection = Web3()
@@ -134,11 +196,17 @@ class Api(object):
 
 
     def get_tokens(self, include_public_tokens: bool =False) -> Tokens:
+        """
+         Retrieve a list of tokens currently present on the loyalty blockchain, and potentially the relevant tokens
+         on the ethereum main-net.
+        :param include_public_tokens: includes the relevant tokens on the ethereum main-net. Defaults to False.
+        :return: :class:`Tokens <Tokens>` object
+        """
         query_params = f'?walletAddress={self.brand_address_public_key.to_checksum_address()}'
         if include_public_tokens:
             query_params += '&public=true'
-        response = requests.get(f'{self.api_host}/tokens{query_params}')
-        json_body = response.json()
+
+        json_body = do_request(self.api_host, 'GET', f'/tokens{query_params}')
         private = list(map(lambda json_token: Token(json_token), json_body['private']))
         public = list(map(lambda json_token: Token(json_token), json_body['public'])) if include_public_tokens else []
         return Tokens(private, public)
@@ -154,14 +222,27 @@ class Api(object):
 
 
     def get_transaction(self, tx_hash: str) -> Transaction:
-        response = requests.get(f'{self.api_host}/transactions/{tx_hash}')
-        json_body = response.json()
+        """
+        Retrieve details for a particular transaction loyalty blockchain transaction.
+        :param tx_hash: the blockchain transaction hash.
+        :return: :class:`Transaction <Transaction>` object
+        """
+        json_body = do_request(self.api_host, 'GET', f'/transactions/{tx_hash}')
         return Transaction(json_body)
 
 
     def get_transactions(self, wallet: str = None,
                          limit: int = 100, offset: int = 0,
                          symbol: str = None, contract_address=None) -> Iterator[Transaction]:
+        """
+        Retrieve a paged list of transactions ordered descending by their blockchain timestamp.
+        :param wallet: (optional) specify a 'wallet' filter to return only transactions to or from that wallet address.
+        :param limit: (optional) specify a limit a to how many transactions to include in the response (defaults to 100).
+        :param offset: (optional) specify an offset for the page of transactions to be returned (defaults to 0).
+        :param symbol: specify a token symbol to only return transactions belonging to a particular token. (either specify symbol or contract address)
+        :param contract_address: specify a contract address to only return transactions belonging to a particular token  with that contract address.
+        :return: Iterator[Transaction]
+        """
         query_params = f'?offset={offset}&limit={limit}'
         if wallet is not None:
             query_params += f'&wallet={wallet}'
@@ -170,18 +251,31 @@ class Api(object):
         if contract_address is not None:
             query_params += f'&contractAddress={contract_address}'
 
-        response = requests.get(f'{self.api_host}/transactions{query_params}')
-        json_body = response.json()
+
+        json_body = do_request(self.api_host, 'GET', f'/transactions{query_params}')
         return map(lambda json_tx: Transaction(json_tx), json_body)
 
 
     def get_address(self, address: str) -> Address:
-        response = requests.get(f'{self.api_host}/addresses/{address}')
-        json_body = response.json()
+        """
+        Retrieve all the token balances and transaction counts for a particular address on the blockchain.
+        :param address:
+        :return: Address
+        """
+        json_body = do_request(self.api_host, 'GET', f'/addresses/{address}')
         return Address(json_body)
 
-    def send_transaction(self, to: str, value: int):
-        nonce = self.increment_and_get_nonce()
+    def send_transaction(self, to: str, value: int) -> Transaction:
+        """
+            Send a loyalty contract transfer to a particular 'to' address from the configured brand address.
+        :param to: Blockchain address of the receiver
+        :param value: transfer value in wei
+        :return: Transaction (status = pending)
+        """
+        if self.loyalty_contract is None or self.web3_connection is None:
+            raise errors.ConfigError('Call .setup() method first in order to be able to use this method.')
+
+        nonce = self.__increment_and_get_nonce()
         log.info(f'Executing transaction to: {to}, value: {value} nonce: {nonce}')
 
         checksummed_to_address = Web3.toChecksumAddress(to)
@@ -209,42 +303,42 @@ class Api(object):
         json_body.pop('status', None)
         return Transaction(json_body)
 
+    def get_last_block(self) -> Block:
+        """
+        Retrieve details of the last block in the chain.
+        :return:
+        """
+        json_body = do_request(self.api_host, 'GET', f'/net')
+        return Block(json_body)
+
     def get_nonce(self) -> int:
-        response = requests.get(
-            f'{self.api_host}/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
-            headers={
-                'Authorization': f'Bearer {self.api_key}'
-            }
-        )
-        json_body = response.json()
+        """
+        Get next nonce to be used for the specified brand addressed as stored by the API (not necessarily in sync
+        with the blockchain transactionCount).
+        :return: nonce int
+        """
+
+        json_body = do_request(self.api_host, 'GET',
+                               f'/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
+                               api_key=self.api_key)
         return json_body['nonce']
 
     def put_nonce(self, nonce: int) -> int:
-        response = requests.put(
-            f'{self.api_host}/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
-            headers={
-                'Authorization': f'Bearer {self.api_key}'
-            },
-            data={
-                'nonce': nonce
-            }
-        )
-        json_body = response.json()
+        """
+        Get nonce stored
+        :param nonce:
+        :return:
+        """
+        json_body = do_request(self.api_host, 'PUT',
+                               f'/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce', data={
+            'nonce': nonce
+        }, api_key=self.api_key)
+
         return json_body['nonce']
 
-    def increment_and_get_nonce(self):
-        payload = [{
-            'operation': 'replace',
-            'path': '/nonce',
-            'value': '++'
-        }]
-        response = requests.patch(
-            f'{self.api_host}/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
-            json=payload,
-            headers={
-                'Authorization': f'Bearer {self.api_key}'
-            }
-        )
-        json_body = response.json()
+    def __increment_and_get_nonce(self):
+        json_body = do_request(self.api_host, 'PATCH',
+                               f'/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
+                               api_key=self.api_key)
         return json_body['nonce']
 
