@@ -174,7 +174,7 @@ class Api(object):
     def setup(self):
         """
         Call this method before making calls to send_transaction to enable sending.
-        :return:
+        :return: None
         """
         log.info(f'Api connection configured to use token {self.token_symbol}')
         token = self.__get_token(self.token_symbol)
@@ -259,7 +259,7 @@ class Api(object):
         """
         Retrieve all the token balances and transaction counts for a particular address on the blockchain.
         :param address:
-        :return: Address
+        :return: :class:`Address <Address>` object
         """
         json_body = do_request(self.api_host, 'GET', f'/addresses/{address}')
         return Address(json_body)
@@ -269,13 +269,13 @@ class Api(object):
             Send a loyalty contract transfer to a particular 'to' address from the configured brand address.
         :param to: Blockchain address of the receiver
         :param value: transfer value in wei
-        :return: Transaction (status = pending)
+        :return: :class:`Transaction <Transaction>` object
         """
         if self.loyalty_contract is None or self.web3_connection is None:
             raise errors.ConfigError('Call .setup() method first in order to be able to use this method.')
 
         nonce = self.__increment_and_get_nonce()
-        log.info(f'Executing transaction to: {to}, value: {value} nonce: {nonce}')
+        log.info(f'Executing transaction to: {to}, value: {value} nonce: {nonce} on chain with id ${self.chain_id}')
 
         checksummed_to_address = Web3.toChecksumAddress(to)
         tx = self.loyalty_contract.functions.transfer(checksummed_to_address, value).buildTransaction({
@@ -283,7 +283,7 @@ class Api(object):
             'gasPrice': 0,
             'gas': 1000000,
             'value': 0,
-            'chainId': 17225
+            'chainId': self.chain_id
         })
 
         signed_tx = self.web3_connection.eth.account.signTransaction(tx, self.brand_address_private_key)
@@ -305,7 +305,7 @@ class Api(object):
     def get_last_block(self) -> Block:
         """
         Retrieve details of the last block in the chain.
-        :return:
+        :return: :class:`Block <Block>` object
         """
         json_body = do_request(self.api_host, 'GET', f'/net')
         return Block(json_body)
@@ -326,7 +326,7 @@ class Api(object):
         """
         Get nonce stored
         :param nonce:
-        :return:
+        :return: nonce int
         """
         json_body = do_request(self.api_host, 'PUT',
                                f'/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce', data={
