@@ -36,6 +36,7 @@ class Token(object):
         self.symbol: str = json_object['symbol']
         self.total_supply: int = json_object['totalSupply']
 
+
 class Tokens(object):
     def __init__(self, private, public):
         self.public: List[Token] = public
@@ -108,8 +109,6 @@ class Block:
         self.transactions: List[str] = json_object['transactions']
         self.transactions_root: str = json_object['transactionsRoot']
         self.chain_id: str = json_object['chainId']
-
-
 
 
 def do_request(api_base_url: str, method: str, path: str, data=None, api_key=None):
