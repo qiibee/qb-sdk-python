@@ -310,6 +310,11 @@ class Api(object):
         json_body = do_request(self.api_host, 'GET', f'/net')
         return Block(json_body)
 
+    def overwrite_nonce_with_current_transaction_count(self) -> int:
+        brand_address = self.get_address(self.brand_address_public_key)
+        log.info(f'Overwriting current nonce with transaction count value {brand_address.transaction_count}')
+        return self.__put_nonce(brand_address.transaction_count)
+
     def get_nonce(self) -> int:
         """
         Get next nonce to be used for the specified brand addressed as stored by the API (not necessarily in sync
@@ -322,12 +327,7 @@ class Api(object):
                                api_key=self.api_key)
         return json_body['nonce']
 
-    def put_nonce(self, nonce: int) -> int:
-        """
-        Get nonce stored
-        :param nonce:
-        :return: nonce int
-        """
+    def __put_nonce(self, nonce: int) -> int:
         json_body = do_request(self.api_host, 'PUT',
                                f'/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce', data={
             'nonce': nonce
