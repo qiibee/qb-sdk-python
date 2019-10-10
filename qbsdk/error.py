@@ -16,3 +16,6 @@ class ConfigError(QiibeeError):
 
 class NotFoundError(QiibeeError):
     pass
+
+class ServerResponseParseError(QiibeeError):
+    pass

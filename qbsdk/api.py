@@ -24,7 +24,7 @@ API_HOSTS = {
     Mode.live: "https://api.qiibee.com"
 }
 
-API_VERSION = '1.0.0'
+API_VERSION = '0.0.1'
 
 class Token(object):
     def __init__(self, json_object):
@@ -274,7 +274,7 @@ class Api(object):
         if self.loyalty_contract is None or self.web3_connection is None:
             raise errors.ConfigError('Call .setup() method first in order to be able to use this method.')
 
-        nonce = self.__increment_and_get_nonce()
+        nonce = self.increment_and_get_nonce()
         log.info(f'Executing transaction to: {to}, value: {value} nonce: {nonce} on chain with id ${self.chain_id}')
 
         checksummed_to_address = Web3.toChecksumAddress(to)
@@ -327,7 +327,7 @@ class Api(object):
                                api_key=self.api_key)
         return json_body['nonce']
 
-    def __put_nonce(self, nonce: int) -> int:
+    def put_nonce(self, nonce: int) -> int:
         json_body = do_request(self.api_host, 'PUT',
                                f'/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce', data={
             'nonce': nonce
@@ -335,7 +335,7 @@ class Api(object):
 
         return json_body['nonce']
 
-    def __increment_and_get_nonce(self):
+    def increment_and_get_nonce(self):
         json_body = do_request(self.api_host, 'PATCH',
                                f'/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
                                api_key=self.api_key)

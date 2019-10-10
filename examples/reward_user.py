@@ -16,7 +16,7 @@ api.setup()
 
 start_millis = int(round(time.time() * 1000))
 tx = api.send_transaction(transfer_receiver, 10)
-pp.pprint(tx)
+print(f'Dispatched transaction with hash {tx.hash}. Polling for its completion..')
 
 while True:
     try:
