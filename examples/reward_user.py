@@ -25,7 +25,7 @@ while True:
         if processed_tx.confirms >= 1:
             break
         time.sleep(0.1)
-    except Exception as e:
+    except qbsdk.error.NotFoundError as e:
         print(e)
 
 end_millis = int(round(time.time() * 1000))
