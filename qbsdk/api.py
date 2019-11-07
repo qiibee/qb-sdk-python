@@ -350,8 +350,10 @@ class Api(object):
 
     def run_skipped_nonce_recovery(self):
         """
-        This is an error-state recovery function. In case your python process crashed while sending transactions
-        it may be the case that the nonce was incremented but the TX was not sent.
+        This is an error-state recovery function. In case your python process error while sending transfers
+        it may be the case that the nonce was incremented but the TX was not sent, which will result in transactions
+        nonces being skipped. If that is the case run this method while making sure no other transactions are currently
+        happening to revert
         :return:
         """
         brand_address = self.get_address(self.brand_address_public_key.to_checksum_address())
