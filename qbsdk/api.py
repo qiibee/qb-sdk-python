@@ -8,6 +8,8 @@ from eth_utils import decode_hex
 from enum import Enum
 import requests
 from typing import Iterator, List, Dict
+import threading
+import time
 import qbsdk.error as errors
 import qbsdk.loyalty_token as loyalty_token
 
@@ -266,7 +268,7 @@ class Api(object):
         json_body = do_request(self.api_host, 'GET', f'/addresses/{address}')
         return Address(json_body)
 
-    def send_transaction(self, to: str, value: int) -> Transaction:
+    def send_transaction(self, to: str, value: int, nonce=None) -> Transaction:
         """
             Send a loyalty contract transfer to a particular 'to' address from the configured brand address.
         :param to: Blockchain address of the receiver
@@ -276,7 +278,8 @@ class Api(object):
         if self.loyalty_contract is None or self.web3_connection is None:
             raise errors.ConfigError('Call .setup() method first in order to be able to use this method.')
 
-        nonce = self.increment_and_get_nonce()
+        if nonce is None:
+            nonce = self.increment_and_get_nonce()
         log.info(f'Executing transaction to: {to}, value: {value} nonce: {nonce} on chain with id ${self.chain_id}')
 
         checksummed_to_address = Web3.toChecksumAddress(to)
@@ -345,4 +348,75 @@ class Api(object):
         self.put_nonce(brand_address.transaction_count)
 
 
+    def run_skipped_nonce_recovery(self):
+        """
+        This is an error-state recovery function. In case your python process crashed while sending transactions
+        it may be the case that the nonce was incremented but the TX was not sent.
+        :return:
+        """
+        brand_address = self.get_address(self.brand_address_public_key.to_checksum_address())
+        log.info(
+            f'Brand address {self.brand_address_private_key} has transactionCount={brand_address.transaction_count}')
+
+        current_nonce = self.get_nonce()
+        log.info(
+            f'Brand address {self.brand_address_private_key} has stored nonce={current_nonce}')
+        if current_nonce < brand_address.transaction_count:
+            log.warning(f'Current stored nonce is behind the transactionCount. Setting it to match transactionCount')
+            self.put_nonce(brand_address.transaction_count)
+        elif current_nonce == brand_address.transaction_count:
+            log.info(f'Brand address transactionCount and stored nonce are in synch. Nothing to do.')
+        else:
+            nonce_diff = current_nonce - brand_address.transaction_count
+            log.warning(f'Current stored nonce is ahead of the transactionCount.'
+                        f' Highly probably nonces have been skipped. Generating {nonce_diff} no-ops to get them in synch..')
+            self.__run_no_ops_for_skipped_nonces(brand_address.transaction_count, current_nonce)
+
+
+    __NO_OP_BATCH_SIZE = 25
+    __NO_OP_TRANSFER_RECEIVER = '0x66384f39Bd9Cb1Eb9393a8f4a97e0E8Eb2Bb3766'
+    __NO_OP_TRANSFER_AMOUNT = 0
+
+    def __run_no_ops_for_skipped_nonces(self, transaction_count: int, current_nonce: int):
+        nonce_diff = current_nonce - transaction_count
+        log.info(f'Difference between current nonce and transactionCount is {nonce_diff}')
+        batch_sizes = [self.__NO_OP_BATCH_SIZE] * (nonce_diff // self.__NO_OP_BATCH_SIZE)
+        batch_sizes.append(nonce_diff % self.__NO_OP_BATCH_SIZE)
+
+        log.info(f'There are {batch_sizes} batches of no-ops to execute.')
+        batch_index = 0
+        nonce_to_use = transaction_count
+        for batch_size in batch_sizes:
+            log.info(f'Executing batch {batch_index} of size {batch_size}')
+            threads = []
+            for i in range(0, batch_size):
+                thread = threading.Thread(target=self.__send_no_op_transaction, args=(nonce_to_use,))
+                thread.start()
+                threads.append(thread)
+                nonce_to_use +=1
+
+            # wait for all to finish..
+            log.info(f'Waiting for all batch no-ops to finish..')
+            for thread in threads:
+                thread.join()
+
+            batch_index += 1
+
+
+    def __send_no_op_transaction(self, nonce: int):
+        log.debug(f'Sending no-op tx tx with nonce {nonce}')
+        tx = self.send_transaction(self.__NO_OP_TRANSFER_RECEIVER, self.__NO_OP_TRANSFER_AMOUNT, nonce)
+        print(f'Pending for finishing of no-op tx with hash {tx.hash} and nonce {nonce}')
+        while True:
+            try:
+                processed_tx = self.get_transaction(tx.hash)
+                if processed_tx.confirms >= 1:
+                    break
+                time.sleep(0.1)
+            except errors.NotFoundError as e:
+                log.debug(f'No-op tx with hash {tx.hash} still not available.')
+            except errors.ConflictError as e:
+                log.debug(f'No-op tx with hash {tx.hash} collided with existing transaction. Moving on.')
+            except Exception as e:
+                raise e
 
