@@ -126,6 +126,8 @@ def do_request(api_base_url: str, method: str, path: str, data=None, api_key=Non
         raise errors.NotFoundError(json_body['message'], 404)
     if response.status_code == 403:
         raise errors.AuthorizationError(json_body['message'], 403)
+    if response.status_code == 409:
+        raise errors.ConflictError(json_body['message'], 409)
 
     # if none of the above error codes match generically raise exception for the status
     response.raise_for_status()
@@ -289,16 +291,11 @@ class Api(object):
         signed_tx = self.web3_connection.eth.account.signTransaction(tx, self.brand_address_private_key)
 
         signed_tx_hex_string = signed_tx.rawTransaction.hex()
-        response = requests.post(f'{self.api_host}/transactions/',
-            headers={
-                'Authorization': f'Bearer {self.api_key}'
-            },
-            data={
-                'data': signed_tx_hex_string
-            }
-        )
 
-        json_body = response.json()
+        json_body = do_request(self.api_host, 'POST', f'/transactions/', data={
+                'data': signed_tx_hex_string
+            })
+
         json_body.pop('status', None)
         return Transaction(json_body)
 
@@ -340,4 +337,12 @@ class Api(object):
                                f'/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
                                api_key=self.api_key)
         return json_body['nonce']
+
+    def _sync_tx_count_to_nonce(self):
+        brand_address = self.get_address(self.brand_address_public_key.to_checksum_address())
+        log.info(f'Brand address {self.brand_address_private_key} has transactionCount={brand_address.transaction_count}')
+        log.info(f'Synching to nonce..')
+        self.put_nonce(brand_address.transaction_count)
+
+
 
