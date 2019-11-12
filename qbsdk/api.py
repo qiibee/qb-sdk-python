@@ -140,6 +140,7 @@ class Api(object):
     api_key: str
     brand_address_private_key: str
     brand_address_public_key: str
+    brand_checksum_address: str
     token_symbol: str
     mode: Mode
     api_host: str
@@ -165,6 +166,7 @@ class Api(object):
             priv_key = keys.PrivateKey(priv_key_bytes)
             pub_key = priv_key.public_key
             self.brand_address_public_key = pub_key
+            self.brand_checksum_address = self.brand_address_public_key.to_checksum_address()
         except eth_keys.exceptions.ValidationError as e:
             raise errors.ConfigError(f'Invalid brand private key: {str(e)}')
 
@@ -205,7 +207,7 @@ class Api(object):
         :param include_public_tokens: includes the relevant tokens on the ethereum main-net. Defaults to False.
         :return: :class:`Tokens <Tokens>` object
         """
-        query_params = f'?walletAddress={self.brand_address_public_key.to_checksum_address()}'
+        query_params = f'?walletAddress={self.brand_checksum_address}'
         if include_public_tokens:
             query_params += '&public=true'
 
@@ -323,13 +325,13 @@ class Api(object):
         """
 
         json_body = do_request(self.api_host, 'GET',
-                               f'/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
+                               f'/addresses/{self.brand_checksum_address}/nonce',
                                api_key=self.api_key)
         return json_body['nonce']
 
     def put_nonce(self, nonce: int) -> int:
         json_body = do_request(self.api_host, 'PUT',
-                               f'/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce', data={
+                               f'/addresses/{self.brand_checksum_address}/nonce', data={
             'nonce': nonce
         }, api_key=self.api_key)
 
@@ -337,13 +339,13 @@ class Api(object):
 
     def increment_and_get_nonce(self):
         json_body = do_request(self.api_host, 'PATCH',
-                               f'/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
+                               f'/addresses/{self.brand_checksum_address}/nonce',
                                api_key=self.api_key)
         return json_body['nonce']
 
     def _sync_tx_count_to_nonce(self):
-        brand_address = self.get_address(self.brand_address_public_key.to_checksum_address())
-        log.info(f'Brand address {self.brand_address_private_key} has transactionCount={brand_address.transaction_count}')
+        brand_address = self.get_address(self.brand_checksum_address)
+        log.info(f'Brand address {self.brand_checksum_address} has transactionCount={brand_address.transaction_count}')
         log.info(f'Synching to nonce..')
         self.put_nonce(brand_address.transaction_count)
 
@@ -356,13 +358,13 @@ class Api(object):
         happening to revert
         :return:
         """
-        brand_address = self.get_address(self.brand_address_public_key.to_checksum_address())
+        brand_address = self.get_address(self.brand_checksum_address)
         log.info(
-            f'Brand address {self.brand_address_private_key} has transactionCount={brand_address.transaction_count}')
+            f'Brand address {self.brand_checksum_address} has transactionCount={brand_address.transaction_count}')
 
         current_nonce = self.get_nonce()
         log.info(
-            f'Brand address {self.brand_address_private_key} has stored nonce={current_nonce}')
+            f'Brand address {self.brand_checksum_address} has stored nonce={current_nonce}')
         if current_nonce < brand_address.transaction_count:
             log.warning(f'Current stored nonce is behind the transactionCount. Setting it to match transactionCount')
             self.put_nonce(brand_address.transaction_count)
