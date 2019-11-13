@@ -358,23 +358,17 @@ class Api(object):
         happening to revert
         :return:
         """
-        brand_address = self.get_address(self.brand_checksum_address)
-        log.info(
-            f'Brand address {self.brand_checksum_address} has transactionCount={brand_address.transaction_count}')
-
-        current_nonce = self.get_nonce()
-        log.info(
-            f'Brand address {self.brand_checksum_address} has stored nonce={current_nonce}')
-        if current_nonce < brand_address.transaction_count:
+        (transaction_count, current_nonce) = self.__get_tx_count_and_nonce()
+        if current_nonce < transaction_count:
             log.warning(f'Current stored nonce is behind the transactionCount. Setting it to match transactionCount')
-            self.put_nonce(brand_address.transaction_count)
-        elif current_nonce == brand_address.transaction_count:
+            self.put_nonce(transaction_count)
+        elif current_nonce == transaction_count:
             log.info(f'Brand address transactionCount and stored nonce are in synch. Nothing to do.')
         else:
-            nonce_diff = current_nonce - brand_address.transaction_count
+            nonce_diff = current_nonce - transaction_count
             log.warning(f'Current stored nonce is ahead of the transactionCount.'
                         f' Highly probably nonces have been skipped. Generating {nonce_diff} no-ops to get them in synch..')
-            self.__run_no_ops_for_skipped_nonces(brand_address.transaction_count, current_nonce)
+            self.__run_no_ops_for_skipped_nonces(transaction_count, current_nonce)
 
 
     __NO_OP_BATCH_SIZE = 25
@@ -384,13 +378,11 @@ class Api(object):
     def __run_no_ops_for_skipped_nonces(self, transaction_count: int, current_nonce: int):
         nonce_diff = current_nonce - transaction_count
         log.info(f'Difference between current nonce and transactionCount is {nonce_diff}')
-        batch_sizes = [self.__NO_OP_BATCH_SIZE] * (nonce_diff // self.__NO_OP_BATCH_SIZE)
-        batch_sizes.append(nonce_diff % self.__NO_OP_BATCH_SIZE)
-
-        log.info(f'There are {batch_sizes} batches of no-ops to execute.')
+        log.info(f'Executing no-op transactions in batches of max {self.__NO_OP_BATCH_SIZE} to cover the gaps.')
         batch_index = 0
         nonce_to_use = transaction_count
-        for batch_size in batch_sizes:
+        while nonce_diff > 0:
+            batch_size = min([self.__NO_OP_BATCH_SIZE, nonce_diff])
             log.info(f'Executing batch {batch_index} of size {batch_size}')
             threads = []
             for i in range(0, batch_size):
@@ -405,11 +397,26 @@ class Api(object):
                 thread.join()
 
             batch_index += 1
+            batch_sleep_time = 5
+            log.info(f'Sleeping for {batch_sleep_time} before doing a new batch.')
+            time.sleep(batch_sleep_time)
+            (transaction_count, current_nonce) = self.__get_tx_count_and_nonce()
+            nonce_diff = current_nonce - transaction_count
+            log.info(f'Difference between current nonce and transactionCount is {nonce_diff}')
+            nonce_to_use = transaction_count
 
 
     def __send_no_op_transaction(self, nonce: int):
         log.debug(f'Sending no-op tx tx with nonce {nonce}')
-        tx = self.send_transaction(self.__NO_OP_TRANSFER_RECEIVER, self.__NO_OP_TRANSFER_AMOUNT, nonce)
+        tx: Transaction
+        try:
+            tx = self.send_transaction(self.__NO_OP_TRANSFER_RECEIVER, self.__NO_OP_TRANSFER_AMOUNT, nonce)
+        except errors.ConflictError as e:
+            log.debug(f'No-op tx collided with existing transaction with the same nonce. Moving on.')
+            return
+        except Exception as e:
+            raise e
+
         print(f'Pending for finishing of no-op tx with hash {tx.hash} and nonce {nonce}')
         while True:
             try:
@@ -419,8 +426,16 @@ class Api(object):
                 time.sleep(0.1)
             except errors.NotFoundError as e:
                 log.debug(f'No-op tx with hash {tx.hash} still not available.')
-            except errors.ConflictError as e:
-                log.debug(f'No-op tx with hash {tx.hash} collided with existing transaction. Moving on.')
             except Exception as e:
                 raise e
+
+    def __get_tx_count_and_nonce(self) -> (int, int):
+        brand_address = self.get_address(self.brand_checksum_address)
+        log.info(
+            f'Brand address {self.brand_checksum_address} has transactionCount={brand_address.transaction_count}')
+
+        current_nonce = self.get_nonce()
+        log.info(
+            f'Brand address {self.brand_checksum_address} has stored nonce={current_nonce}')
+        return (brand_address.transaction_count, current_nonce)
 
