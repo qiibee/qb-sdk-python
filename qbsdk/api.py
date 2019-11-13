@@ -12,6 +12,7 @@ import threading
 import time
 import qbsdk.error as errors
 import qbsdk.loyalty_token as loyalty_token
+import json
 
 
 log = logging.getLogger(__name__)
@@ -281,7 +282,8 @@ class Api(object):
             raise errors.ConfigError('Call .setup() method first in order to be able to use this method.')
 
         if nonce is None:
-            nonce = self.increment_and_get_nonce()
+            # nonce = self.increment_and_get_nonce()
+            nonce = self._get_parity_next_nonce()
         log.info(f'Executing transaction to: {to}, value: {value} nonce: {nonce} on chain with id ${self.chain_id}')
 
         checksummed_to_address = Web3.toChecksumAddress(to)
@@ -408,7 +410,6 @@ class Api(object):
 
     def __send_no_op_transaction(self, nonce: int):
         log.debug(f'Sending no-op tx tx with nonce {nonce}')
-        tx: Transaction
         try:
             tx = self.send_transaction(self.__NO_OP_TRANSFER_RECEIVER, self.__NO_OP_TRANSFER_AMOUNT, nonce)
         except errors.ConflictError as e:
@@ -443,4 +444,19 @@ class Api(object):
         log.info(
             f'Brand address {self.brand_checksum_address} has stored nonce={current_nonce}')
         return (brand_address.transaction_count, current_nonce)
+
+
+    def _get_parity_next_nonce(self) -> int:
+        url = 'http://10.0.3.241:8540'
+        headers = {
+            'Content-Type': 'application/json'
+        }
+        payload = {
+            "method":"parity_nextNonce",
+             "params": [self.brand_checksum_address],
+            "id":1,"jsonrpc":"2.0"
+        }
+        response = requests.post(url, data=json.dumps(payload), headers=headers)
+        json_body = response.json()
+        return int(json_body["result"], 16)
 
