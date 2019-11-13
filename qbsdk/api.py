@@ -431,7 +431,8 @@ class Api(object):
                 raise e
             end_millis = int(round(time.time() * 1000))
             if end_millis - start_millis > 10000:
-                log.debug(f'Skipping check for tx {tx.hash}. Mostly likely was superseeded by an existing tx pool tx.')
+                log.info(f'Skipping check for tx {tx.hash}. Mostly likely was superseeded by an existing tx pool tx.')
+                break
 
     def __get_tx_count_and_nonce(self) -> (int, int):
         brand_address = self.get_address(self.brand_checksum_address)
