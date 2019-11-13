@@ -418,6 +418,7 @@ class Api(object):
             raise e
 
         print(f'Pending for finishing of no-op tx with hash {tx.hash} and nonce {nonce}')
+        start_millis = int(round(time.time() * 1000))
         while True:
             try:
                 processed_tx = self.get_transaction(tx.hash)
@@ -428,6 +429,9 @@ class Api(object):
                 log.debug(f'No-op tx with hash {tx.hash} still not available.')
             except Exception as e:
                 raise e
+            end_millis = int(round(time.time() * 1000))
+            if end_millis - start_millis > 10000:
+                log.debug(f'Skipping check for tx {tx.hash}. Mostly likely was superseeded by an existing tx pool tx.')
 
     def __get_tx_count_and_nonce(self) -> (int, int):
         brand_address = self.get_address(self.brand_checksum_address)
