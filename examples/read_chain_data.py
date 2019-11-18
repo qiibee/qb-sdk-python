@@ -12,6 +12,13 @@ tokens = api.get_tokens()
 for token in tokens.private:
     print(vars(token))
 
+current_prices = api.get_prices(tokens.private[0].contract_address, ['USD', 'CHF'])
+print(f'Prices for token {tokens.private[0].symbol}: {str(current_prices)}')
+
+days_back = 5
+historical_prices = list(api.get_prices_history(tokens.private[0].contract_address, 'USD', days_back))
+print(f'Historical price for token {tokens.private[0].symbol} {days_back} ago: {vars(historical_prices[0])}')
+
 latest_transactions = list(api.get_transactions())
 print(f'Retrieved the last {len(latest_transactions)}')
 
