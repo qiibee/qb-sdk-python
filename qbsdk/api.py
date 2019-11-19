@@ -13,6 +13,7 @@ import time
 import qbsdk.error as errors
 import qbsdk.loyalty_token as loyalty_token
 import json
+import backoff
 
 
 log = logging.getLogger(__name__)
@@ -282,8 +283,22 @@ class Api(object):
             raise errors.ConfigError('Call .setup() method first in order to be able to use this method.')
 
         if nonce is None:
-            # nonce = self.increment_and_get_nonce()
-            nonce = self._get_parity_next_nonce()
+            return self.__send_retryable_transaction(to, value)
+        else:
+            return self.__send_transaction(to, value, nonce)
+
+
+    @backoff.on_exception(backoff.constant,
+                          errors.ConflictError,
+                          jitter=backoff.full_jitter,
+                          interval=2,
+                          max_tries=10)
+    def __send_retryable_transaction(self, to: str, value: int) -> Transaction:
+        # nonce = self.increment_and_get_nonce()
+        nonce = self._get_parity_next_nonce()
+        return self.__send_transaction(to, value, nonce)
+
+    def __send_transaction(self, to: str, value: int, nonce) -> Transaction:
         log.info(f'Executing transaction to: {to}, value: {value} nonce: {nonce} on chain with id ${self.chain_id}')
 
         checksummed_to_address = Web3.toChecksumAddress(to)
@@ -373,6 +388,14 @@ class Api(object):
             self.__run_no_ops_for_skipped_nonces(transaction_count, current_nonce)
 
 
+    def _get_parity_next_nonce(self) -> int:
+        json_body = do_request(self.api_host,
+                               'GET', f'/addresses/{self.brand_checksum_address}/nextnonce',
+                               api_key=self.api_key)
+
+        return json_body["nextNonce"]
+
+
     __NO_OP_BATCH_SIZE = 25
     __NO_OP_TRANSFER_RECEIVER = '0x66384f39Bd9Cb1Eb9393a8f4a97e0E8Eb2Bb3766'
     __NO_OP_TRANSFER_AMOUNT = 0
@@ -444,19 +467,4 @@ class Api(object):
         log.info(
             f'Brand address {self.brand_checksum_address} has stored nonce={current_nonce}')
         return (brand_address.transaction_count, current_nonce)
-
-
-    def _get_parity_next_nonce(self) -> int:
-        url = 'http://10.0.3.241:8540'
-        headers = {
-            'Content-Type': 'application/json'
-        }
-        payload = {
-            "method":"parity_nextNonce",
-             "params": [self.brand_checksum_address],
-            "id":1,"jsonrpc":"2.0"
-        }
-        response = requests.post(url, data=json.dumps(payload), headers=headers)
-        json_body = response.json()
-        return int(json_body["result"], 16)
 
