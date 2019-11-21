@@ -294,7 +294,6 @@ class Api(object):
                           interval=2,
                           max_tries=10)
     def __send_retryable_transaction(self, to: str, value: int) -> Transaction:
-        # nonce = self.increment_and_get_nonce()
         nonce = self._get_parity_next_nonce()
         return self.__send_transaction(to, value, nonce)
 
@@ -329,142 +328,9 @@ class Api(object):
         json_body = do_request(self.api_host, 'GET', f'/net')
         return Block(json_body)
 
-    def overwrite_nonce_with_current_transaction_count(self) -> int:
-        brand_address = self.get_address(self.brand_address_public_key)
-        log.info(f'Overwriting current nonce with transaction count value {brand_address.transaction_count}')
-        return self.__put_nonce(brand_address.transaction_count)
-
-    def get_nonce(self) -> int:
-        """
-        Get next nonce to be used for the specified brand addressed as stored by the API (not necessarily in sync
-        with the blockchain transactionCount).
-        :return: nonce int
-        """
-
-        json_body = do_request(self.api_host, 'GET',
-                               f'/addresses/{self.brand_checksum_address}/nonce',
-                               api_key=self.api_key)
-        return json_body['nonce']
-
-    def put_nonce(self, nonce: int) -> int:
-        json_body = do_request(self.api_host, 'PUT',
-                               f'/addresses/{self.brand_checksum_address}/nonce', data={
-            'nonce': nonce
-        }, api_key=self.api_key)
-
-        return json_body['nonce']
-
-    def increment_and_get_nonce(self):
-        json_body = do_request(self.api_host, 'PATCH',
-                               f'/addresses/{self.brand_checksum_address}/nonce',
-                               api_key=self.api_key)
-        return json_body['nonce']
-
-    def _sync_tx_count_to_nonce(self):
-        brand_address = self.get_address(self.brand_checksum_address)
-        log.info(f'Brand address {self.brand_checksum_address} has transactionCount={brand_address.transaction_count}')
-        log.info(f'Synching to nonce..')
-        self.put_nonce(brand_address.transaction_count)
-
-
-    def run_skipped_nonce_recovery(self):
-        """
-        This is an error-state recovery function. In case your python process error while sending transfers
-        it may be the case that the nonce was incremented but the TX was not sent, which will result in transactions
-        nonces being skipped. If that is the case run this method while making sure no other transactions are currently
-        happening to revert
-        :return:
-        """
-        (transaction_count, current_nonce) = self.__get_tx_count_and_nonce()
-        if current_nonce < transaction_count:
-            log.warning(f'Current stored nonce is behind the transactionCount. Setting it to match transactionCount')
-            self.put_nonce(transaction_count)
-        elif current_nonce == transaction_count:
-            log.info(f'Brand address transactionCount and stored nonce are in synch. Nothing to do.')
-        else:
-            nonce_diff = current_nonce - transaction_count
-            log.warning(f'Current stored nonce is ahead of the transactionCount.'
-                        f' Highly probably nonces have been skipped. Generating {nonce_diff} no-ops to get them in synch..')
-            self.__run_no_ops_for_skipped_nonces(transaction_count, current_nonce)
-
-
     def _get_parity_next_nonce(self) -> int:
         json_body = do_request(self.api_host,
                                'GET', f'/addresses/{self.brand_checksum_address}/nextnonce',
                                api_key=self.api_key)
 
         return json_body["nextNonce"]
-
-
-    __NO_OP_BATCH_SIZE = 25
-    __NO_OP_TRANSFER_RECEIVER = '0x66384f39Bd9Cb1Eb9393a8f4a97e0E8Eb2Bb3766'
-    __NO_OP_TRANSFER_AMOUNT = 0
-
-    def __run_no_ops_for_skipped_nonces(self, transaction_count: int, current_nonce: int):
-        nonce_diff = current_nonce - transaction_count
-        log.info(f'Difference between current nonce and transactionCount is {nonce_diff}')
-        log.info(f'Executing no-op transactions in batches of max {self.__NO_OP_BATCH_SIZE} to cover the gaps.')
-        batch_index = 0
-        nonce_to_use = transaction_count
-        while nonce_diff > 0:
-            batch_size = min([self.__NO_OP_BATCH_SIZE, nonce_diff])
-            log.info(f'Executing batch {batch_index} of size {batch_size}')
-            threads = []
-            for i in range(0, batch_size):
-                thread = threading.Thread(target=self.__send_no_op_transaction, args=(nonce_to_use,))
-                thread.start()
-                threads.append(thread)
-                nonce_to_use +=1
-
-            # wait for all to finish..
-            log.info(f'Waiting for all batch no-ops to finish..')
-            for thread in threads:
-                thread.join()
-
-            batch_index += 1
-            batch_sleep_time = 5
-            log.info(f'Sleeping for {batch_sleep_time} before doing a new batch.')
-            time.sleep(batch_sleep_time)
-            (transaction_count, current_nonce) = self.__get_tx_count_and_nonce()
-            nonce_diff = current_nonce - transaction_count
-            log.info(f'Difference between current nonce and transactionCount is {nonce_diff}')
-            nonce_to_use = transaction_count
-
-
-    def __send_no_op_transaction(self, nonce: int):
-        log.debug(f'Sending no-op tx tx with nonce {nonce}')
-        try:
-            tx = self.send_transaction(self.__NO_OP_TRANSFER_RECEIVER, self.__NO_OP_TRANSFER_AMOUNT, nonce)
-        except errors.ConflictError as e:
-            log.debug(f'No-op tx collided with existing transaction with the same nonce. Moving on.')
-            return
-        except Exception as e:
-            raise e
-
-        print(f'Pending for finishing of no-op tx with hash {tx.hash} and nonce {nonce}')
-        start_millis = int(round(time.time() * 1000))
-        while True:
-            try:
-                processed_tx = self.get_transaction(tx.hash)
-                if processed_tx.confirms >= 1:
-                    break
-                time.sleep(0.1)
-            except errors.NotFoundError as e:
-                log.debug(f'No-op tx with hash {tx.hash} still not available.')
-            except Exception as e:
-                raise e
-            end_millis = int(round(time.time() * 1000))
-            if end_millis - start_millis > 10000:
-                log.info(f'Skipping check for tx {tx.hash}. Mostly likely was superseeded by an existing tx pool tx.')
-                break
-
-    def __get_tx_count_and_nonce(self) -> (int, int):
-        brand_address = self.get_address(self.brand_checksum_address)
-        log.info(
-            f'Brand address {self.brand_checksum_address} has transactionCount={brand_address.transaction_count}')
-
-        current_nonce = self.get_nonce()
-        log.info(
-            f'Brand address {self.brand_checksum_address} has stored nonce={current_nonce}')
-        return (brand_address.transaction_count, current_nonce)
-
