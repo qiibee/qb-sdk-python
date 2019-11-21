@@ -333,4 +333,4 @@ class Api(object):
                                'GET', f'/addresses/{self.brand_checksum_address}/nextnonce',
                                api_key=self.api_key)
 
-        return json_body['result']
+        return int(json_body['result'], 16)
