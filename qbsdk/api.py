@@ -110,6 +110,10 @@ class Block:
         self.transactions_root: str = json_object['transactionsRoot']
         self.chain_id: str = json_object['chainId']
 
+class TimestampedPrice:
+    def __init__(self, json_object):
+        self.time: int = json_object['time']
+        self.price: float = json_object['price']
 
 def do_request(api_base_url: str, method: str, path: str, data=None, api_key=None):
     headers = {
@@ -306,6 +310,42 @@ class Api(object):
         """
         json_body = do_request(self.api_host, 'GET', f'/net')
         return Block(json_body)
+
+    def get_prices(self, from_token_contract_address: str, to_currency_symbols: List[str] = None) -> Dict[str, str]:
+        """
+        Returns the FIAT price of one unit of a given Loyalty Token.
+        This endpoint uses a third-party provider to get the ETH exchange rate.
+        The QBX/ETH Exchange rate is fetched from the Coinsuper exchange.
+        :return: :class:`Block <Block>` object
+        """
+
+        query_params = f'?from={from_token_contract_address}'
+
+        if to_currency_symbols is not None and len(to_currency_symbols) > 0:
+            currency_symbols_joined = ','.join(to_currency_symbols)
+            query_params += f'&to={currency_symbols_joined}'
+        json_body = do_request(self.api_host, 'GET', f'/prices{query_params}')
+        return json_body
+
+    def get_prices_history(self, from_token_contract_address: str, currency_symbol: str, limit: int = None) -> Iterator[TimestampedPrice]:
+        """
+        Returns the historical FIAT price values of one unit of a given Loyalty Token for a desired currency.
+        This endpoint uses a third-party provider to get the ETH exchange rate.
+        The QBX/ETH Exchange rate is fetched from the Coinsuper exchange.
+        :return:
+        """
+
+        query_params = f'?from={from_token_contract_address}'
+
+        if currency_symbol is not None:
+            query_params += f'&to={currency_symbol}'
+        if limit is not None:
+            query_params += f'&limit={limit}'
+
+
+        json_body = do_request(self.api_host, 'GET', f'/prices/history{query_params}')
+        return map(lambda json_tx: TimestampedPrice(json_tx), json_body)
+
 
     def overwrite_nonce_with_current_transaction_count(self) -> int:
         brand_address = self.get_address(self.brand_address_public_key)
