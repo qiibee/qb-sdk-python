@@ -108,14 +108,14 @@ class TimestampedPrice:
         self.time: int = json_object['time']
         self.price: float = json_object['price']
 
-def do_request(api_base_url: str, method: str, path: str, data=None, api_key=None):
+def do_request(api_base_url: str, method: str, path: str, params=None, data=None, api_key=None):
     headers = {
         'ApiVersion': API_VERSION
     }
 
     if api_key is not None:
         headers['Authorization'] = f'Bearer {api_key}'
-    response = requests.request(method, f'{api_base_url}{path}', data=data, headers=headers)
+    response = requests.request(method, f'{api_base_url}{path}', params=params, data=data, headers=headers)
     json_body = response.json()
     if response.status_code == 400:
         raise errors.InvalidRequestError(json_body['message'], 400)
@@ -153,18 +153,22 @@ class Api(object):
         self.api_host = API_HOSTS[self.mode]
 
 
-    def get_tokens(self, include_public_tokens: bool =False, brand_checksum_address = None) -> Tokens:
+    def get_tokens(self, include_public_tokens: bool =False, wallet_address = None) -> Tokens:
         """
          Retrieve a list of tokens currently present on the loyalty blockchain, and potentially the relevant tokens
          on the ethereum main-net.
         :param include_public_tokens: includes the relevant tokens on the ethereum main-net. Defaults to False.
         :return: :class:`Tokens <Tokens>` object
         """
-        query_params = f'?walletAddress={self.brand_checksum_address}'
-        if include_public_tokens:
-            query_params += '&public=true'
+        query_params = {}
 
-        json_body = do_request(self.api_host, 'GET', f'/tokens{query_params}')
+        if wallet_address is not None:
+            query_params['walletAddress'] = wallet_address
+
+        if include_public_tokens:
+            query_params['public'] = 'true'
+
+        json_body = do_request(self.api_host, 'GET', '/tokens', params=query_params)
         private = list(map(lambda json_token: Token(json_token), json_body['private']))
         public = list(map(lambda json_token: Token(json_token), json_body['public'])) if include_public_tokens else []
         return Tokens(private, public)
@@ -204,16 +208,20 @@ class Api(object):
         :param contract_address: specify a contract address to only return transactions belonging to a particular token  with that contract address.
         :return: Iterator[Transaction]
         """
-        query_params = f'?offset={offset}&limit={limit}'
+
+        query_params = {
+            'offset': offset,
+            'limit': limit
+        }
         if wallet is not None:
-            query_params += f'&wallet={wallet}'
+            query_params['wallet'] = wallet
         if symbol is not None:
-            query_params += f'&symbol={symbol}'
+            query_params['symbol'] = symbol
         if contract_address is not None:
-            query_params += f'&contractAddress={contract_address}'
+            query_params['contractAddress'] = contract_address
 
 
-        json_body = do_request(self.api_host, 'GET', f'/transactions{query_params}')
+        json_body = do_request(self.api_host, 'GET', f'/transactions', params=query_params)
         return map(lambda json_tx: Transaction(json_tx), json_body)
 
 
@@ -262,12 +270,14 @@ class Api(object):
         :return: :class:`Block <Block>` object
         """
 
-        query_params = f'?from={from_token_contract_address}'
+        query_params = {
+            'from': from_token_contract_address
+        }
 
         if to_currency_symbols is not None and len(to_currency_symbols) > 0:
             currency_symbols_joined = ','.join(to_currency_symbols)
-            query_params += f'&to={currency_symbols_joined}'
-        json_body = do_request(self.api_host, 'GET', f'/prices{query_params}')
+            query_params['to'] = currency_symbols_joined
+        json_body = do_request(self.api_host, 'GET', f'/prices', params=query_params)
         return json_body
 
 
@@ -279,13 +289,15 @@ class Api(object):
         :return:
         """
 
-        query_params = f'?from={from_token_contract_address}'
+        query_params = {
+            'from': from_token_contract_address
+        }
 
         if currency_symbol is not None:
-            query_params += f'&to={currency_symbol}'
+            query_params['to']= currency_symbol
         if limit is not None:
-            query_params += f'&limit={limit}'
+            query_params['limit'] = limit
 
 
-        json_body = do_request(self.api_host, 'GET', f'/prices/history{query_params}')
+        json_body = do_request(self.api_host, 'GET', f'/prices/history', params=query_params)
         return map(lambda json_tx: TimestampedPrice(json_tx), json_body)

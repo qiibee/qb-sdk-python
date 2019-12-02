@@ -6,7 +6,7 @@ print('Reading chain data..')
 api_key = os.environ['QB_API_KEY']
 brand_address_private_key = os.environ['BRAND_ADDRESS_PRIVATE_KEY']
 token_symbol = os.environ['BRAND_TOKEN_SYMBOL']
-api = qbsdk.Api(api_key, brand_address_private_key, token_symbol)
+api = qbsdk.Api(api_key)
 
 tokens = api.get_tokens()
 for token in tokens.private:
