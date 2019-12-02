@@ -254,9 +254,9 @@ class Api(object):
         return Block(json_body)
 
 
-    def _get_parity_next_nonce(self) -> int:
+    def _get_parity_next_nonce(self, brand_address: str) -> int:
         json_body = do_request(self.api_host,
-                               'GET', f'/addresses/{self.brand_checksum_address}/nextnonce',
+                               'GET', f'/addresses/{brand_address}/nextnonce',
                                api_key=self.api_key)
 
         return int(json_body['result'], 16)

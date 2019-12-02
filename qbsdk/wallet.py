@@ -103,7 +103,7 @@ class Wallet:
 
 
     def __get_token(self, symbol: str) -> Token:
-        tokens = self.api.get_tokens()
+        tokens = self.api.get_tokens(wallet_address=self.brand_checksum_address)
         matches = list(filter(lambda token: token.symbol == symbol, tokens.private))
         if len(matches) == 0:
             return None
@@ -123,10 +123,10 @@ class Wallet:
         if nonce is not None:
             return self.__send_transaction(to, value, nonce)
 
-        if self._transfer_strategy == TransferStrategy.user:
+        if self._transfer_strategy is TransferStrategy.user:
             checksummed_contract_address = Web3.toChecksumAddress(self.token.contract_address)
             raw_tx = self.api.get_raw_transaction(self.checksum_address, to, value, checksummed_contract_address)
-        elif self._transfer_strategy == TransferStrategy.user:
+        elif self._transfer_strategy is TransferStrategy.brand:
             return self.__send_retryable_transaction(to, value)
         else:
             raise ValueError('Unsupported transfer strategy.')
@@ -138,7 +138,7 @@ class Wallet:
                           interval=2,
                           max_tries=10)
     def __send_retryable_transaction(self, to: str, value: int) -> Transaction:
-        nonce = self._get_parity_next_nonce()
+        nonce = self.api._get_parity_next_nonce(self.brand_checksum_address)
         return self.__send_transaction(to, value, nonce)
 
 
