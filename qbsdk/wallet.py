@@ -138,7 +138,7 @@ class Wallet:
                           interval=2,
                           max_tries=10)
     def __send_retryable_transaction(self, to: str, value: int) -> Transaction:
-        nonce = self.api._get_parity_next_nonce(self.brand_checksum_address)
+        nonce = self.api._get_address_next_nonce(self.brand_checksum_address)
         return self.__send_transaction(to, value, nonce)
 
 
