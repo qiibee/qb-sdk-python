@@ -128,7 +128,6 @@ class Wallet:
             raw_tx = self.api.get_raw_transaction(self.checksum_address, to, value, checksummed_contract_address)
             raw_tx['gas'] = raw_tx['gasLimit']
             del raw_tx['gasLimit']
-            print(raw_tx)
             return self.__send_web3_transaction(raw_tx)
         elif self._transfer_strategy is TransferStrategy.brand:
             return self.__send_retryable_transaction(to, value)
