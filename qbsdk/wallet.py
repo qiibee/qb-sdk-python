@@ -35,7 +35,7 @@ class Wallet:
     private_key: str
     checksum_address: str
     token_symbol: str
-    brand_token: Token
+    token: Token
     __loyalty_contract: web3.contract.Contract
     _chain_id: int
     _transfer_strategy: TransferStrategy
@@ -49,7 +49,7 @@ class Wallet:
         self._transfer_strategy = transfer_strategy
         self.token_symbol = token_symbol
         self.api = api
-        self.brand_token: Token = None
+        self.token: Token = None
         self._chain_id: int = None
         self.web3_connection: Web3 = None
         self.__loyalty_contract = None
@@ -62,7 +62,7 @@ class Wallet:
             priv_key = keys.PrivateKey(priv_key_bytes)
             pub_key = priv_key.public_key
             self.brand_address_public_key = pub_key
-            self.brand_checksum_address = self.brand_address_public_key.to_checksum_address()
+            self.checksum_address = self.brand_address_public_key.to_checksum_address()
         except eth_keys.exceptions.ValidationError as e:
             raise errors.ConfigError(f'Invalid brand private key: {str(e)}')
 
@@ -88,7 +88,7 @@ class Wallet:
         token = self.__get_token(self.token_symbol)
         if token is None:
             raise errors.ConfigError(f'Token with symbol {self.token_symbol} does not exist.')
-        self.brand_token = token
+        self.token = token
 
         log.info('Requesting blockchain network info..')
 
@@ -103,7 +103,7 @@ class Wallet:
 
 
     def __get_token(self, symbol: str) -> Token:
-        tokens = self.api.get_tokens(wallet_address=self.brand_checksum_address)
+        tokens = self.api.get_tokens(wallet_address=self.checksum_address)
         matches = list(filter(lambda token: token.symbol == symbol, tokens.private))
         if len(matches) == 0:
             return None
@@ -126,6 +126,10 @@ class Wallet:
         if self._transfer_strategy is TransferStrategy.user:
             checksummed_contract_address = Web3.toChecksumAddress(self.token.contract_address)
             raw_tx = self.api.get_raw_transaction(self.checksum_address, to, value, checksummed_contract_address)
+            raw_tx['gas'] = raw_tx['gasLimit']
+            del raw_tx['gasLimit']
+            print(raw_tx)
+            return self.__send_web3_transaction(raw_tx)
         elif self._transfer_strategy is TransferStrategy.brand:
             return self.__send_retryable_transaction(to, value)
         else:
@@ -153,9 +157,11 @@ class Wallet:
             'value': 0,
             'chainId': self._chain_id
         })
+        return self.__send_web3_transaction(tx)
 
-        signed_tx = self.web3_connection.eth.account.signTransaction(tx, self.private_key)
 
+    def __send_web3_transaction(self, raw_tx: dict) -> Transaction:
+        signed_tx = self.web3_connection.eth.account.signTransaction(raw_tx, self.private_key)
         signed_tx_hex_string = signed_tx.rawTransaction.hex()
 
         return self.api.post_transaction(signed_tx_hex_string)

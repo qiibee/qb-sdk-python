@@ -185,13 +185,11 @@ class Api(object):
 
 
     def get_raw_transaction(self, from_address: str, to_address: str, value: int, contract_address: str):
-        json_body = do_request(self.api_host, 'GET', f'/transactions/raw', data={
-            'params': {
-                'from': from_address,
-                'to': to_address,
-                'transferAmount': value,
-                'contractAddress': contract_address
-            }
+        json_body = do_request(self.api_host, 'GET', f'/transactions/raw', params={
+            'from': from_address,
+            'to': to_address,
+            'transferAmount': value,
+            'contractAddress': contract_address
         })
 
         return json_body

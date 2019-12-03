@@ -12,10 +12,14 @@ api = qbsdk.Api(api_key, brand_address_private_key, token_symbol)
 
 transfer_receiver = '0x87265a62c60247f862b9149423061b36b460f4bb'
 
-api.setup()
+wallet = qbsdk.Wallet(brand_address_private_key, token_symbol, api, transfer_strategy=qbsdk.TransferStrategy.brand)
+
+wallet.setup()
+
+transfer_receiver = '0x87265a62c60247f862b9149423061b36b460f4bb'
 
 start_millis = int(round(time.time() * 1000))
-tx = api.send_transaction(transfer_receiver, 10)
+tx = wallet.send_transaction(transfer_receiver, 10)
 print(f'Dispatched transaction with hash {tx.hash}. Polling for its completion..')
 
 while True:
@@ -32,3 +36,4 @@ end_millis = int(round(time.time() * 1000))
 time_diff = end_millis - start_millis
 print(f'Transaction end-to-end duration {time_diff}')
 print(f'Transaction with hash {processed_tx.hash} was successfully confirmed.')
+
