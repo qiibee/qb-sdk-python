@@ -133,13 +133,8 @@ def do_request(api_base_url: str, method: str, path: str, params=None, data=None
 
 class Api(object):
     api_key: str
-    brand_address_private_key: str
-    brand_address_public_key: str
-    brand_checksum_address: str
-    token_symbol: str
     mode: Mode
     api_host: str
-    brand_token: Token
     def __init__(self, api_key: str, mode : Mode =Mode.sandbox):
         """The :class:`Api` object, represents a connection to the qiibee API which facilitates
          executing reads and transactions on the qiibee blockchain.
