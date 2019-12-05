@@ -8,8 +8,12 @@ from eth_utils import decode_hex
 from enum import Enum
 import requests
 from typing import Iterator, List, Dict
+import threading
+import time
 import qbsdk.error as errors
 import qbsdk.loyalty_token as loyalty_token
+import json
+import backoff
 
 
 log = logging.getLogger(__name__)
@@ -142,6 +146,7 @@ class Api(object):
     api_key: str
     brand_address_private_key: str
     brand_address_public_key: str
+    brand_checksum_address: str
     token_symbol: str
     mode: Mode
     api_host: str
@@ -167,6 +172,7 @@ class Api(object):
             priv_key = keys.PrivateKey(priv_key_bytes)
             pub_key = priv_key.public_key
             self.brand_address_public_key = pub_key
+            self.brand_checksum_address = self.brand_address_public_key.to_checksum_address()
         except eth_keys.exceptions.ValidationError as e:
             raise errors.ConfigError(f'Invalid brand private key: {str(e)}')
 
@@ -207,7 +213,7 @@ class Api(object):
         :param include_public_tokens: includes the relevant tokens on the ethereum main-net. Defaults to False.
         :return: :class:`Tokens <Tokens>` object
         """
-        query_params = f'?walletAddress={self.brand_address_public_key.to_checksum_address()}'
+        query_params = f'?walletAddress={self.brand_checksum_address}'
         if include_public_tokens:
             query_params += '&public=true'
 
@@ -270,7 +276,7 @@ class Api(object):
         json_body = do_request(self.api_host, 'GET', f'/addresses/{address}')
         return Address(json_body)
 
-    def send_transaction(self, to: str, value: int) -> Transaction:
+    def send_transaction(self, to: str, value: int, nonce=None) -> Transaction:
         """
             Send a loyalty contract transfer to a particular 'to' address from the configured brand address.
         :param to: Blockchain address of the receiver
@@ -280,7 +286,22 @@ class Api(object):
         if self.loyalty_contract is None or self.web3_connection is None:
             raise errors.ConfigError('Call .setup() method first in order to be able to use this method.')
 
-        nonce = self.increment_and_get_nonce()
+        if nonce is None:
+            return self.__send_retryable_transaction(to, value)
+        else:
+            return self.__send_transaction(to, value, nonce)
+
+
+    @backoff.on_exception(backoff.constant,
+                          errors.ConflictError,
+                          jitter=backoff.full_jitter,
+                          interval=2,
+                          max_tries=10)
+    def __send_retryable_transaction(self, to: str, value: int) -> Transaction:
+        nonce = self._get_parity_next_nonce()
+        return self.__send_transaction(to, value, nonce)
+
+    def __send_transaction(self, to: str, value: int, nonce) -> Transaction:
         log.info(f'Executing transaction to: {to}, value: {value} nonce: {nonce} on chain with id ${self.chain_id}')
 
         checksummed_to_address = Web3.toChecksumAddress(to)
@@ -310,6 +331,13 @@ class Api(object):
         """
         json_body = do_request(self.api_host, 'GET', f'/net')
         return Block(json_body)
+
+    def _get_parity_next_nonce(self) -> int:
+        json_body = do_request(self.api_host,
+                               'GET', f'/addresses/{self.brand_checksum_address}/nextnonce',
+                               api_key=self.api_key)
+
+        return int(json_body['result'], 16)
 
     def get_prices(self, from_token_contract_address: str, to_currency_symbols: List[str] = None) -> Dict[str, str]:
         """
@@ -345,44 +373,3 @@ class Api(object):
 
         json_body = do_request(self.api_host, 'GET', f'/prices/history{query_params}')
         return map(lambda json_tx: TimestampedPrice(json_tx), json_body)
-
-
-    def overwrite_nonce_with_current_transaction_count(self) -> int:
-        brand_address = self.get_address(self.brand_address_public_key)
-        log.info(f'Overwriting current nonce with transaction count value {brand_address.transaction_count}')
-        return self.__put_nonce(brand_address.transaction_count)
-
-    def get_nonce(self) -> int:
-        """
-        Get next nonce to be used for the specified brand addressed as stored by the API (not necessarily in sync
-        with the blockchain transactionCount).
-        :return: nonce int
-        """
-
-        json_body = do_request(self.api_host, 'GET',
-                               f'/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
-                               api_key=self.api_key)
-        return json_body['nonce']
-
-    def put_nonce(self, nonce: int) -> int:
-        json_body = do_request(self.api_host, 'PUT',
-                               f'/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce', data={
-            'nonce': nonce
-        }, api_key=self.api_key)
-
-        return json_body['nonce']
-
-    def increment_and_get_nonce(self):
-        json_body = do_request(self.api_host, 'PATCH',
-                               f'/addresses/{self.brand_address_public_key.to_checksum_address()}/nonce',
-                               api_key=self.api_key)
-        return json_body['nonce']
-
-    def _sync_tx_count_to_nonce(self):
-        brand_address = self.get_address(self.brand_address_public_key.to_checksum_address())
-        log.info(f'Brand address {self.brand_address_private_key} has transactionCount={brand_address.transaction_count}')
-        log.info(f'Synching to nonce..')
-        self.put_nonce(brand_address.transaction_count)
-
-
-
