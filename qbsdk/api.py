@@ -13,7 +13,7 @@ class Mode(Enum):
 
 
 API_HOSTS = {
-    Mode.sandbox: "https://apitesting.qiibee.com",
+    Mode.sandbox: "https://api-sandbox.qiibee.com",
     Mode.live: "https://api.qiibee.com"
 }
 
