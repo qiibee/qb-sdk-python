@@ -1,20 +1,9 @@
 import logging
 
-import web3
-from web3 import Web3
-from eth_keys import keys
-import eth_keys
-from eth_utils import decode_hex
 from enum import Enum
 import requests
 from typing import Iterator, List, Dict
-import threading
-import time
 import qbsdk.error as errors
-import qbsdk.loyalty_token as loyalty_token
-import json
-import backoff
-
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +13,7 @@ class Mode(Enum):
 
 
 API_HOSTS = {
-    Mode.sandbox: "https://apitesting.qiibee.com",
+    Mode.sandbox: "https://api-sandbox.qiibee.com",
     Mode.live: "https://api.qiibee.com"
 }
 
@@ -119,14 +108,14 @@ class TimestampedPrice:
         self.time: int = json_object['time']
         self.price: float = json_object['price']
 
-def do_request(api_base_url: str, method: str, path: str, data=None, api_key=None):
+def do_request(api_base_url: str, method: str, path: str, params=None, data=None, api_key=None):
     headers = {
         'ApiVersion': API_VERSION
     }
 
     if api_key is not None:
         headers['Authorization'] = f'Bearer {api_key}'
-    response = requests.request(method, f'{api_base_url}{path}', data=data, headers=headers)
+    response = requests.request(method, f'{api_base_url}{path}', params=params, data=data, headers=headers)
     json_body = response.json()
     if response.status_code == 400:
         raise errors.InvalidRequestError(json_body['message'], 400)
@@ -144,92 +133,40 @@ def do_request(api_base_url: str, method: str, path: str, data=None, api_key=Non
 
 class Api(object):
     api_key: str
-    brand_address_private_key: str
-    brand_address_public_key: str
-    brand_checksum_address: str
-    token_symbol: str
     mode: Mode
     api_host: str
-    brand_token: Token
-    loyalty_contract: web3.contract.Contract
-    def __init__(self, api_key: str, brand_address_private_key: str, token_symbol: str, mode : Mode =Mode.sandbox):
+    def __init__(self, api_key: str, mode : Mode =Mode.sandbox):
         """The :class:`Api` object, represents a connection to the qiibee API which facilitates
          executing reads and transactions on the qiibee blockchain.
-
 
         :param str api_key: The brand API key (secret)
         :param str brand_address_private_key: The loyalty token source brand address private key
         :param int token_symbol: the symbol of the brand's token
         """
         self.api_key = api_key
-        self.brand_address_private_key = brand_address_private_key
-        self.token_symbol = token_symbol
         self.mode = mode
         self.api_host = API_HOSTS[self.mode]
 
-        try:
-            priv_key_bytes = decode_hex(brand_address_private_key)
-            priv_key = keys.PrivateKey(priv_key_bytes)
-            pub_key = priv_key.public_key
-            self.brand_address_public_key = pub_key
-            self.brand_checksum_address = self.brand_address_public_key.to_checksum_address()
-        except eth_keys.exceptions.ValidationError as e:
-            raise errors.ConfigError(f'Invalid brand private key: {str(e)}')
 
-        # these are intialized during setup (I/O required)
-        self.brand_token: Token = None
-        self.chain_id: int = None
-        self.web3_connection: Web3 = None
-        self.loyalty_contract = None
-
-
-    def setup(self):
-        """
-        Call this method before making calls to send_transaction to enable sending.
-        :return: None
-        """
-        log.info(f'Api connection configured to use token {self.token_symbol}')
-        token = self.__get_token(self.token_symbol)
-        if token is None:
-            raise errors.ConfigError(f'Token with symbol {self.token_symbol} does not exist.')
-        self.brand_token = token
-
-        log.info('Requesting blockchain network info..')
-
-        last_block = self.get_last_block()
-        self.chain_id = last_block.chain_id
-
-        logging.info(f'Setting up web3 contract with contract address {token.contract_address}')
-
-        self.web3_connection = Web3()
-        checksummed_contract_address = Web3.toChecksumAddress(token.contract_address)
-        self.loyalty_contract = self.web3_connection.eth.contract(abi=loyalty_token.abi, address=checksummed_contract_address)
-
-
-    def get_tokens(self, include_public_tokens: bool =False) -> Tokens:
+    def get_tokens(self, include_public_tokens: bool =False, wallet_address = None) -> Tokens:
         """
          Retrieve a list of tokens currently present on the loyalty blockchain, and potentially the relevant tokens
          on the ethereum main-net.
         :param include_public_tokens: includes the relevant tokens on the ethereum main-net. Defaults to False.
         :return: :class:`Tokens <Tokens>` object
         """
-        query_params = f'?walletAddress={self.brand_checksum_address}'
-        if include_public_tokens:
-            query_params += '&public=true'
+        query_params = {}
 
-        json_body = do_request(self.api_host, 'GET', f'/tokens{query_params}')
+        if wallet_address is not None:
+            query_params['walletAddress'] = wallet_address
+
+        if include_public_tokens:
+            query_params['public'] = 'true'
+
+        json_body = do_request(self.api_host, 'GET', '/tokens', params=query_params)
         private = list(map(lambda json_token: Token(json_token), json_body['private']))
         public = list(map(lambda json_token: Token(json_token), json_body['public'])) if include_public_tokens else []
         return Tokens(private, public)
-
-
-    def __get_token(self, symbol: str) -> Token:
-        tokens = self.get_tokens()
-        matches = list(filter(lambda token: token.symbol == symbol, tokens.private))
-        if len(matches) == 0:
-            return None
-        else:
-            return matches[0]
 
 
     def get_transaction(self, tx_hash: str) -> Transaction:
@@ -241,6 +178,16 @@ class Api(object):
         json_body = do_request(self.api_host, 'GET', f'/transactions/{tx_hash}')
         return Transaction(json_body)
 
+
+    def get_raw_transaction(self, from_address: str, to_address: str, value: int, contract_address: str):
+        json_body = do_request(self.api_host, 'GET', f'/transactions/raw', params={
+            'from': from_address,
+            'to': to_address,
+            'transferAmount': value,
+            'contractAddress': contract_address
+        })
+
+        return json_body
 
     def get_transactions(self, wallet: str = None,
                          limit: int = 100, offset: int = 0,
@@ -254,16 +201,20 @@ class Api(object):
         :param contract_address: specify a contract address to only return transactions belonging to a particular token  with that contract address.
         :return: Iterator[Transaction]
         """
-        query_params = f'?offset={offset}&limit={limit}'
+
+        query_params = {
+            'offset': offset,
+            'limit': limit
+        }
         if wallet is not None:
-            query_params += f'&wallet={wallet}'
+            query_params['wallet'] = wallet
         if symbol is not None:
-            query_params += f'&symbol={symbol}'
+            query_params['symbol'] = symbol
         if contract_address is not None:
-            query_params += f'&contractAddress={contract_address}'
+            query_params['contractAddress'] = contract_address
 
 
-        json_body = do_request(self.api_host, 'GET', f'/transactions{query_params}')
+        json_body = do_request(self.api_host, 'GET', f'/transactions', params=query_params)
         return map(lambda json_tx: Transaction(json_tx), json_body)
 
 
@@ -276,53 +227,16 @@ class Api(object):
         json_body = do_request(self.api_host, 'GET', f'/addresses/{address}')
         return Address(json_body)
 
-    def send_transaction(self, to: str, value: int, nonce=None) -> Transaction:
-        """
-            Send a loyalty contract transfer to a particular 'to' address from the configured brand address.
-        :param to: Blockchain address of the receiver
-        :param value: transfer value in wei
-        :return: :class:`Transaction <Transaction>` object
-        """
-        if self.loyalty_contract is None or self.web3_connection is None:
-            raise errors.ConfigError('Call .setup() method first in order to be able to use this method.')
 
-        if nonce is None:
-            return self.__send_retryable_transaction(to, value)
-        else:
-            return self.__send_transaction(to, value, nonce)
-
-
-    @backoff.on_exception(backoff.constant,
-                          errors.ConflictError,
-                          jitter=backoff.full_jitter,
-                          interval=2,
-                          max_tries=10)
-    def __send_retryable_transaction(self, to: str, value: int) -> Transaction:
-        nonce = self._get_parity_next_nonce()
-        return self.__send_transaction(to, value, nonce)
-
-    def __send_transaction(self, to: str, value: int, nonce) -> Transaction:
-        log.info(f'Executing transaction to: {to}, value: {value} nonce: {nonce} on chain with id ${self.chain_id}')
-
-        checksummed_to_address = Web3.toChecksumAddress(to)
-        tx = self.loyalty_contract.functions.transfer(checksummed_to_address, value).buildTransaction({
-            'nonce': nonce,
-            'gasPrice': 0,
-            'gas': 1000000,
-            'value': 0,
-            'chainId': self.chain_id
-        })
-
-        signed_tx = self.web3_connection.eth.account.signTransaction(tx, self.brand_address_private_key)
-
-        signed_tx_hex_string = signed_tx.rawTransaction.hex()
+    def post_transaction(self, signed_tx_hex_string: str) -> Transaction:
 
         json_body = do_request(self.api_host, 'POST', f'/transactions/', data={
-                'data': signed_tx_hex_string
-            })
+            'data': signed_tx_hex_string
+        })
 
         json_body.pop('status', None)
         return Transaction(json_body)
+
 
     def get_last_block(self) -> Block:
         """
@@ -332,12 +246,14 @@ class Api(object):
         json_body = do_request(self.api_host, 'GET', f'/net')
         return Block(json_body)
 
-    def _get_parity_next_nonce(self) -> int:
+
+    def _get_address_next_nonce(self, brand_address: str) -> int:
         json_body = do_request(self.api_host,
-                               'GET', f'/addresses/{self.brand_checksum_address}/nextnonce',
+                               'GET', f'/addresses/{brand_address}/nextnonce',
                                api_key=self.api_key)
 
         return int(json_body['result'], 16)
+
 
     def get_prices(self, from_token_contract_address: str, to_currency_symbols: List[str] = None) -> Dict[str, str]:
         """
@@ -347,13 +263,16 @@ class Api(object):
         :return: :class:`Block <Block>` object
         """
 
-        query_params = f'?from={from_token_contract_address}'
+        query_params = {
+            'from': from_token_contract_address
+        }
 
         if to_currency_symbols is not None and len(to_currency_symbols) > 0:
             currency_symbols_joined = ','.join(to_currency_symbols)
-            query_params += f'&to={currency_symbols_joined}'
-        json_body = do_request(self.api_host, 'GET', f'/prices{query_params}')
+            query_params['to'] = currency_symbols_joined
+        json_body = do_request(self.api_host, 'GET', f'/prices', params=query_params)
         return json_body
+
 
     def get_prices_history(self, from_token_contract_address: str, currency_symbol: str, limit: int = None) -> Iterator[TimestampedPrice]:
         """
@@ -363,13 +282,15 @@ class Api(object):
         :return:
         """
 
-        query_params = f'?from={from_token_contract_address}'
+        query_params = {
+            'from': from_token_contract_address
+        }
 
         if currency_symbol is not None:
-            query_params += f'&to={currency_symbol}'
+            query_params['to']= currency_symbol
         if limit is not None:
-            query_params += f'&limit={limit}'
+            query_params['limit'] = limit
 
 
-        json_body = do_request(self.api_host, 'GET', f'/prices/history{query_params}')
+        json_body = do_request(self.api_host, 'GET', f'/prices/history', params=query_params)
         return map(lambda json_tx: TimestampedPrice(json_tx), json_body)
