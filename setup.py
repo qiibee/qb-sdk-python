@@ -7,7 +7,7 @@ requirements_file = 'requirements.txt'
 
 setuptools.setup(
     name="qb-sdk",
-    version="0.0.1",
+    version="0.0.2",
     author="qiibee",
     author_email="tech@qiibee.com",
     description="qiibee loyalty blockchain brand SDK",
@@ -20,7 +20,7 @@ setuptools.setup(
         'requests>=1.0.0',
         'web3>=5.0.0',
         'eth-utils>=1.6.0,<2.0.0',
-        'eth-keys<0.3.0,>=0.2.1',
+        'eth-keys>=0.2.1,<0.3.0',
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
