@@ -21,6 +21,7 @@ setuptools.setup(
         'web3>=5.0.0',
         'eth-utils>=1.6.0,<2.0.0',
         'eth-keys>=0.2.1,<0.3.0',
+        'backoff>=1.9.0,<2.0.0'
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
