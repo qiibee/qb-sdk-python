@@ -40,7 +40,12 @@ def wait_for_tx_completion(tx):
             # some other error occured. Retry your transaction.
     print(f'Transaction with hash {processed_tx.hash}')
 
-
+# To send transactions at optimal throughput from one address
+# send them sequentially as shown below.
+# Check for transaction completion in an asynchronous fashion.
+# The example here uses a Thread and gevent which when using gevent converts to
+#  a Greenlet http://www.gevent.org/api/gevent.greenlet.html
+# Using it without gevent works too, albeit somewhat slower.
 i = 0
 for i in range(0, TOTAL_TX_COUNT):
     print(f'Sending tx {i}')
