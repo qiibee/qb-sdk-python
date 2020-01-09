@@ -46,7 +46,6 @@ def wait_for_tx_completion(tx):
 # The example here uses a Thread and gevent which when using gevent converts to
 #  a Greenlet http://www.gevent.org/api/gevent.greenlet.html
 # Using it without gevent works too, albeit somewhat slower.
-i = 0
 for i in range(0, TOTAL_TX_COUNT):
     print(f'Sending tx {i}')
     i += 1
