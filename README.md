@@ -1,10 +1,10 @@
 # qb-sdk-python
-Brand SDK for the Qiibee blockchain.
+Brand SDK for the qiibee blockchain.
 
 
 ## Requirements
 
-To use this library, use the Qiibee dashboard account to retrieve the API key present at https://dashboard.qiibee.com/developers
+To use this library, use the qiibee dashboard account to retrieve the API key present at https://dashboard.qiibee.com/developers
 
 ## Installation
 
