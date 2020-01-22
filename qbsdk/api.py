@@ -13,8 +13,8 @@ class Mode(Enum):
 
 
 API_HOSTS = {
-    Mode.sandbox: "https://api-sandbox.qiibee.com",
-    Mode.live: "https://api.qiibee.com"
+    Mode.sandbox: 'https://api-sandbox.qiibee.com',
+    Mode.live: 'https://api.qiibee.com'
 }
 
 API_VERSION = '0.0.1'
@@ -146,6 +146,16 @@ class Api(object):
         self.api_key = api_key
         self.mode = mode
         self.api_host = API_HOSTS[self.mode]
+
+
+    def get_token(self, contract_address: str) -> Token:
+        """Returns a specific Loyalty Token on the qiibee chain.
+        :param contract_address: Contract Address of the token
+        :return: :class:`Token` object
+        """
+
+        json_body = do_request(self.api_host, 'GET', f'/tokens/{contract_address}')
+        return Token(json_body['private'])
 
 
     def get_tokens(self, include_public_tokens: bool =False, wallet_address = None) -> Tokens:
