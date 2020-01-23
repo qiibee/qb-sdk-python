@@ -17,6 +17,11 @@ log = logging.getLogger(__name__)
 
 
 class TransferStrategy(Enum):
+    """
+     Defines how the Wallet sends transactions. If the brand strategy is used, transaction nonces are
+     fetched using an authenticated endpoint that allows faster transaction sending.
+     If the user strategy is used, an endpoint giving the Ethereum address transactionCount is used.
+    """
     brand = 'brand'
     user = 'user'
 
@@ -36,6 +41,7 @@ class Wallet:
     checksum_address: str
     token_symbol: str
     token: Token
+    api: Api
     __loyalty_contract: web3.contract.Contract
     _chain_id: int
     _transfer_strategy: TransferStrategy
@@ -45,6 +51,12 @@ class Wallet:
                  token_symbol: str,
                  api: Api,
                  transfer_strategy: TransferStrategy = TransferStrategy.user):
+        """
+        :param str private_key: Ethereum address private key
+        :param str token_symbol: Token symbol
+        :param Api api: instance of API class to connect to the blockchain.
+        :param TransferStrategy transfer_strategy: Can either be `brand` or `user`. Defaults to `user`.
+        """
         self.private_key = private_key
         self._transfer_strategy = transfer_strategy
         self.token_symbol = token_symbol
@@ -71,29 +83,45 @@ class Wallet:
                       token_symbol: str,
                       api: Api,
                       transfer_strategy: TransferStrategy = TransferStrategy.user):
+        """
+        Create a random new wallet, using what randomness your OS can provide
+        :param str token_symbol:
+        :param Api api:
+        :param TransferStrategy transfer_strategy:
+        :return:
+        """
 
         new_eth_account = eth_account.Account.create()
         return cls(new_eth_account.key.hex(), token_symbol, api, transfer_strategy)
 
 
-    def setup(self):
+    def setup(self, token: Token = None, chain_id: str = None):
         """
-        Call this method before making calls to send_transaction to enable sending.
+        Call this method before making calls to send_transaction to enable sending. if token and chain_id are
+        specified no I/O is done. If they are not, they are fetched from the API.
+        :param Token token: nullable. If not defined it is fetched from the API based on symbol.
+        :param str chain_id: nullable. If not defined it is fetched from API.
         :return: None
         """
         if self.api is None:
             raise errors.ConfigError('Api is not defined. Cannot make requests to the blockchain.')
 
         log.info(f'Wallet configured to use token {self.token_symbol}')
-        token = self.__get_token(self.token_symbol)
+
         if token is None:
-            raise errors.ConfigError(f'Token with symbol {self.token_symbol} does not exist.')
+            log.debug(f'Token uninitialized for {self.checksum_address}. fetching..')
+            token = self.__get_token(self.token_symbol)
+            if token is None:
+                raise errors.ConfigError(f'Token with symbol {self.token_symbol} does not exist.')
         self.token = token
 
         log.info('Requesting blockchain network info..')
 
-        last_block = self.api.get_last_block()
-        self._chain_id = last_block.chain_id
+        if chain_id is None:
+            log.debug(f'Chain id uninitialized for {self.checksum_address}. fetching..')
+            last_block = self.api.get_last_block()
+            chain_id = last_block.chain_id
+        self._chain_id = chain_id
 
         logging.info(f'Setting up web3 contract with contract address {token.contract_address}')
 

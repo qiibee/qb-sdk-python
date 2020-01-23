@@ -8,7 +8,7 @@ pp = pprint.PrettyPrinter(indent=4)
 api_key = os.environ['QB_API_KEY']
 brand_address_private_key = os.environ['BRAND_ADDRESS_PRIVATE_KEY']
 token_symbol = os.environ['BRAND_TOKEN_SYMBOL']
-api = qbsdk.Api(api_key, brand_address_private_key, token_symbol)
+api = qbsdk.Api(api_key)
 
 transfer_receiver = '0x87265a62c60247f862b9149423061b36b460f4bb'
 
