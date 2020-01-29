@@ -4,7 +4,7 @@ Brand SDK for the qiibee blockchain.
 
 ## Requirements
 
-To use this library, use the qiibee dashboard account to retrieve the API key present at https://dashboard.qiibee.com/developers
+Consult the [docs](https://docs.qiibee.com/sdks-overview/) to see how to obtain the credentials necessary for this.
 
 ## Installation
 
