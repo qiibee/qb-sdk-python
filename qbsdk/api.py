@@ -12,6 +12,16 @@ class Mode(Enum):
     live = 'live'
 
 
+class TransactionType(Enum):
+    transfer = 'transfer'
+    reward = 'reward'
+    debit = 'debit'
+    redeem = 'redeem'
+
+class TokenType(Enum):
+    wallet = 'wallet'
+    nowallet = 'nowallet'
+
 API_HOSTS = {
     Mode.sandbox: 'https://api-sandbox.qiibee.com',
     Mode.live: 'https://api.qiibee.com'
@@ -28,6 +38,7 @@ class Token(object):
         self.rate: int = json_object['rate']
         self.symbol: str = json_object['symbol']
         self.total_supply: int = json_object['totalSupply']
+        self.token_type: TokenType = TokenType(json_object['tokenType'])
 
 
 class Tokens(object):
@@ -47,13 +58,13 @@ class Transaction(object):
         self.block_hash: str = json_object['blockHash'] if 'blockHash' in json_object else None
         self.block_number: int = json_object['blockNumber'] if 'blockNumber' in json_object else None
         self.chain_id: int = json_object['chainId'] if 'chainId' in json_object else None
-        self.from_address: str = json_object['from']
+        self.from_address: str = json_object['from'] if 'from' in json_object else None
         self.hash: str = json_object['hash']
         self.input: str = json_object['input'] if 'input' in json_object else None
         self.nonce: int = json_object['nonce']
-        self.to_address: str = json_object['to']
+        self.to_address: str = json_object['to'] if 'to' in json_object else None
         self.transaction_index: int = json_object['transactionIndex'] if 'transactionIndex' in json_object else None
-        self.value: int = int(json_object['value'])
+        self.value: int = int(json_object['value']) if 'value' in json_object else None
         self.status: bool = json_object['status'] if 'status' in json_object else None
         self.contract: str = json_object['contract'] if 'contract' in json_object else json_object['contractAddress']
         self.timestamp: int = json_object['timestamp'] if 'timestamp' in json_object else None
@@ -84,7 +95,7 @@ class Address:
 
 class Block:
     def __init__(self, json_object):
-        self.author: str = json_object['author']
+        self.author: str = json_object['author'] if 'author' in json_object else None
         self.extra_data: str = json_object['extraData']
         self.hash: str = json_object['hash']
         self.miner: str = json_object['miner']
@@ -92,12 +103,12 @@ class Block:
         self.parent_hash: int = json_object['parentHash']
         self.seal_fields: int = json_object['receiptsRoot']
         self.receipts_root: int = json_object['receiptsRoot']
-        self.seal_fields: List[str] = json_object['sealFields']
+        self.seal_fields: List[str] = json_object['sealFields'] if 'sealFields' in json_object else None
         self.sha3_uncles: List[str] = json_object['sha3Uncles']
-        self.signature: str = json_object['signature']
+        self.signature: str = json_object['signature'] if 'signature' in json_object else None
         self.size: int = json_object['size']
         self.state_root: str = json_object['stateRoot']
-        self.step: str = json_object['step']
+        self.step: str = json_object['step']  if 'step' in json_object else None
         self.timestamp: str = json_object['timestamp']
         self.transactions: List[str] = json_object['transactions']
         self.transactions_root: str = json_object['transactionsRoot']
@@ -189,13 +200,21 @@ class Api(object):
         return Transaction(json_body)
 
 
-    def get_raw_transaction(self, from_address: str, to_address: str, value: int, contract_address: str):
-        json_body = do_request(self.api_host, 'GET', f'/transactions/raw', params={
+    def get_raw_transaction(self,
+                            from_address: str,
+                            to_address: str,
+                            value: int,
+                            contract_address: str,
+                            transaction_type: TransactionType = TransactionType.transfer):
+
+        params = {
             'from': from_address,
             'to': to_address,
             'transferAmount': value,
-            'contractAddress': contract_address
-        })
+            'contractAddress': contract_address,
+            'txType': transaction_type.value
+        }
+        json_body = do_request(self.api_host, 'GET', f'/transactions/raw', params=params)
 
         return json_body
 
