@@ -219,30 +219,20 @@ class Wallet:
     def __send_nowallet_transaction(self, to: str, value: int, tx_type: TransactionType, nonce) -> Transaction:
         log.info(f'Executing transaction to: {to}, value: {value} nonce: {nonce} on chain with id ${self._chain_id}')
 
+        tx_params = {
+                'nonce': nonce,
+                'gasPrice': 0,
+                'gas': 1000000,
+                'value': 0,
+                'chainId': self._chain_id
+            }
+
         if tx_type == TransactionType.reward:
-            tx = self.__loyalty_contract.functions.earn(to, value).buildTransaction({
-                'nonce': nonce,
-                'gasPrice': 0,
-                'gas': 1000000,
-                'value': 0,
-                'chainId': self._chain_id
-            })
+            tx = self.__loyalty_contract.functions.earn(to, value).buildTransaction(tx_params)
         elif tx_type == TransactionType.debit:
-            tx = self.__loyalty_contract.functions.debit(to, value).buildTransaction({
-                'nonce': nonce,
-                'gasPrice': 0,
-                'gas': 1000000,
-                'value': 0,
-                'chainId': self._chain_id
-            })
+            tx = self.__loyalty_contract.functions.debit(to, value).buildTransaction(tx_params)
         elif tx_type == TransactionType.redeem:
-            tx = self.__loyalty_contract.functions.redeem(to, value).buildTransaction({
-                'nonce': nonce,
-                'gasPrice': 0,
-                'gas': 1000000,
-                'value': 0,
-                'chainId': self._chain_id
-            })
+            tx = self.__loyalty_contract.functions.redeem(to, value).buildTransaction(tx_params)
 
         return self.__send_web3_transaction(tx)
 
