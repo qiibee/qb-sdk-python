@@ -227,7 +227,7 @@ class Wallet:
                 'chainId': self._chain_id
             }
 
-        if tx_type == TransactionType.reward:
+        if tx_type == TransactionType.earn:
             tx = self.__loyalty_contract.functions.earn(to, value).buildTransaction(tx_params)
         elif tx_type == TransactionType.debit:
             tx = self.__loyalty_contract.functions.debit(to, value).buildTransaction(tx_params)
@@ -260,12 +260,12 @@ class Wallet:
                     'value': 0,
                     'chainId': self._chain_id
                 }
-            if  tx_type == TransactionType.reward:
+            if  tx_type == TransactionType.earn:
                 tx = self.__loyalty_contract.functions.earnBatch(to_array, amount_array).buildTransaction(tx_params)
-            elif tx_type == TransactionType.reward:
-                tx = self.__loyalty_contract.functions.earnBatch(to_array, amount_array).buildTransaction(tx_params)
+            elif tx_type == TransactionType.debit:
+                tx = self.__loyalty_contract.functions.debitBatch(to_array, amount_array).buildTransaction(tx_params)
             elif tx_type == TransactionType.redeem:
-                tx = self.__loyalty_contract.functions.earnBatch(to_array, amount_array).buildTransaction(tx_params)
+                tx = self.__loyalty_contract.functions.redeemBatch(to_array, amount_array).buildTransaction(tx_params)
             else:
                 raise errors.UnsupportedOperationError(f'TransactionType {tx_type.value} not supported for batches.')
             return self.__send_web3_transaction(tx)

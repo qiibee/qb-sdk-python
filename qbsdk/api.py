@@ -14,7 +14,7 @@ class Mode(Enum):
 
 class TransactionType(Enum):
     transfer = 'transfer'
-    reward = 'reward'
+    earn = 'earn'
     debit = 'debit'
     redeem = 'redeem'
 
