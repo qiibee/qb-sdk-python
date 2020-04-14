@@ -12,7 +12,7 @@ from qbsdk.api import Transaction
 from qbsdk.api import Api
 from qbsdk.api import TokenType
 from qbsdk.api import TransactionType
-from typing import Callable
+from typing import Callable, List
 from enum import Enum
 import eth_account
 
@@ -244,24 +244,40 @@ class Wallet:
         return self.api.post_transaction(signed_tx_hex_string)
 
 
-    def send_reward_batch(self, tx_data_list: [TxData]):
-        if self.token != TokenType.nowallet:
+    def send_batch(self, tx_data_list: [TxData], tx_type: TransactionType) -> Transaction:
+        if self.token.token_type != TokenType.nowallet:
             raise errors.UnsupportedOperationError(f'The token type does not support sending batches.')
 
-        to_array = tx_data_list.map(lambda tx_data: tx_data.address)
-        amount_array = tx_data_list.map(lambda tx_data: tx_data.amount)
+
+        to_array: List[str] = list(map(lambda tx_data: tx_data.address, tx_data_list))
+        amount_array: List[int] = list(map(lambda tx_data: tx_data.amount, tx_data_list))
 
         def send(nonce):
-            tx = self.__loyalty_contract.functions.earnBatch(to_array, amount_array).buildTransaction({
-                'nonce': nonce,
-                'gasPrice': 0,
-                'gas': 1000000,
-                'value': 0,
-                'chainId': self._chain_id
-            })
-
+            tx_params = {
+                    'nonce': nonce,
+                    'gasPrice': 0,
+                    'gas': 1000000,
+                    'value': 0,
+                    'chainId': self._chain_id
+                }
+            if  tx_type == TransactionType.reward:
+                tx = self.__loyalty_contract.functions.earnBatch(to_array, amount_array).buildTransaction(tx_params)
+            elif tx_type == TransactionType.reward:
+                tx = self.__loyalty_contract.functions.earnBatch(to_array, amount_array).buildTransaction(tx_params)
+            elif tx_type == TransactionType.redeem:
+                tx = self.__loyalty_contract.functions.earnBatch(to_array, amount_array).buildTransaction(tx_params)
+            else:
+                raise errors.UnsupportedOperationError(f'TransactionType {tx_type.value} not supported for batches.')
             return self.__send_web3_transaction(tx)
-        return self.__send_retryable_transaction(send)
+
+        if self._transfer_strategy is TransferStrategy.user:
+
+            checksummed_contract_address = Web3.toChecksumAddress(self.token.contract_address)
+            # fetch a raw_tx simply to be able to get a nonce value
+            raw_tx = self.api.get_raw_transaction(self.checksum_address, to_array[0], amount_array[0], checksummed_contract_address, tx_type)
+            return send(raw_tx['nonce'])
+        elif self._transfer_strategy is TransferStrategy.brand:
+            return self.__send_retryable_transaction(send)
 
 
 

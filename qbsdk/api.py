@@ -23,7 +23,7 @@ class TokenType(Enum):
     nowallet = 'nowallet'
 
 API_HOSTS = {
-    Mode.sandbox: 'https://api-sandbox.qiibee.com',
+    Mode.sandbox: 'http://localhost:3000',
     Mode.live: 'https://api.qiibee.com'
 }
 
