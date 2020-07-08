@@ -10,6 +10,9 @@ import qbsdk.error as errors
 from qbsdk.api import Token
 from qbsdk.api import Transaction
 from qbsdk.api import Api
+from qbsdk.api import TokenType
+from qbsdk.api import TransactionType
+from typing import Callable, List
 from enum import Enum
 import eth_account
 
@@ -35,6 +38,12 @@ class BrandRetryConfig:
 
 
 DEFAULT_BRAND_RETRY_CONFIG = BrandRetryConfig(backoff.constant, backoff.full_jitter, 2, 10)
+
+
+class TxData:
+    def __init__(self, amount: int, address: str):
+        self.amount = amount
+        self.address = address
 
 class Wallet:
     private_key: str
@@ -127,7 +136,18 @@ class Wallet:
 
         self.web3_connection = Web3()
         checksummed_contract_address = Web3.toChecksumAddress(token.contract_address)
-        self.__loyalty_contract = self.web3_connection.eth.contract(abi=loyalty_token.abi, address=checksummed_contract_address)
+
+        if token.token_type == TokenType.wallet:
+            self.__loyalty_contract = self.web3_connection.eth.contract(
+                abi=loyalty_token.abi,
+                address=checksummed_contract_address)
+        elif token.token_type == TokenType.nowallet:
+            self.__loyalty_contract = self.web3_connection.eth.contract(
+                abi=loyalty_token.no_wallet_abi,
+                address=checksummed_contract_address)
+        else:
+            raise errors.ConfigError(f'Unsupported token type: {token.token_type}')
+
 
 
     def __get_token(self, symbol: str) -> Token:
@@ -138,7 +158,7 @@ class Wallet:
         else:
             return matches[0]
 
-    def send_transaction(self, to: str, value: int, nonce=None) -> Transaction:
+    def send_transaction(self, to: str, value: int, nonce=None, tx_type: TransactionType=None) -> Transaction:
         """
             Send a loyalty contract transfer to a particular 'to' address from the configured wallet address.
         :param to: Blockchain address of the receiver
@@ -153,12 +173,22 @@ class Wallet:
 
         if self._transfer_strategy is TransferStrategy.user:
             checksummed_contract_address = Web3.toChecksumAddress(self.token.contract_address)
-            raw_tx = self.api.get_raw_transaction(self.checksum_address, to, value, checksummed_contract_address)
+            raw_tx = self.api.get_raw_transaction(self.checksum_address, to, value,
+                                                  checksummed_contract_address, tx_type)
             raw_tx['gas'] = raw_tx['gasLimit']
             del raw_tx['gasLimit']
             return self.__send_web3_transaction(raw_tx)
         elif self._transfer_strategy is TransferStrategy.brand:
-            return self.__send_retryable_transaction(to, value)
+
+            if self.token.token_type == TokenType.wallet:
+                def send(nonce: int):
+                   self. __send_transaction(to, value, nonce)
+                return self.__send_retryable_transaction(send)
+            else:
+                def send(nonce: int):
+                   self.__send_nowallet_transaction(to, value, tx_type, nonce)
+                return self.__send_retryable_transaction(send)
+
         else:
             raise ValueError('Unsupported transfer strategy.')
 
@@ -168,9 +198,9 @@ class Wallet:
                           jitter=backoff.full_jitter,
                           interval=2,
                           max_tries=10)
-    def __send_retryable_transaction(self, to: str, value: int) -> Transaction:
+    def __send_retryable_transaction(self, send: Callable[[int], None]) -> Transaction:
         nonce = self.api._get_address_next_nonce(self.checksum_address)
-        return self.__send_transaction(to, value, nonce)
+        send(nonce)
 
 
     def __send_transaction(self, to: str, value: int, nonce) -> Transaction:
@@ -186,12 +216,69 @@ class Wallet:
         })
         return self.__send_web3_transaction(tx)
 
+    def __send_nowallet_transaction(self, to: str, value: int, tx_type: TransactionType, nonce) -> Transaction:
+        log.info(f'Executing transaction to: {to}, value: {value} nonce: {nonce} on chain with id ${self._chain_id}')
+
+        tx_params = {
+                'nonce': nonce,
+                'gasPrice': 0,
+                'gas': 1000000,
+                'value': 0,
+                'chainId': self._chain_id
+            }
+
+        if tx_type == TransactionType.earn:
+            tx = self.__loyalty_contract.functions.earn(to, value).buildTransaction(tx_params)
+        elif tx_type == TransactionType.debit:
+            tx = self.__loyalty_contract.functions.debit(to, value).buildTransaction(tx_params)
+        elif tx_type == TransactionType.redeem:
+            tx = self.__loyalty_contract.functions.redeem(to, value).buildTransaction(tx_params)
+
+        return self.__send_web3_transaction(tx)
+
 
     def __send_web3_transaction(self, raw_tx: dict) -> Transaction:
         signed_tx = self.web3_connection.eth.account.signTransaction(raw_tx, self.private_key)
         signed_tx_hex_string = signed_tx.rawTransaction.hex()
 
         return self.api.post_transaction(signed_tx_hex_string)
+
+
+    def send_batch(self, tx_data_list: [TxData], tx_type: TransactionType) -> Transaction:
+        if self.token.token_type != TokenType.nowallet:
+            raise errors.UnsupportedOperationError(f'The token type does not support sending batches.')
+
+
+        to_array: List[str] = list(map(lambda tx_data: tx_data.address, tx_data_list))
+        amount_array: List[int] = list(map(lambda tx_data: tx_data.amount, tx_data_list))
+
+        def send(nonce):
+            tx_params = {
+                    'nonce': nonce,
+                    'gasPrice': 0,
+                    'gas': 1000000,
+                    'value': 0,
+                    'chainId': self._chain_id
+                }
+            if  tx_type == TransactionType.earn:
+                tx = self.__loyalty_contract.functions.earnBatch(to_array, amount_array).buildTransaction(tx_params)
+            elif tx_type == TransactionType.debit:
+                tx = self.__loyalty_contract.functions.debitBatch(to_array, amount_array).buildTransaction(tx_params)
+            elif tx_type == TransactionType.redeem:
+                tx = self.__loyalty_contract.functions.redeemBatch(to_array, amount_array).buildTransaction(tx_params)
+            else:
+                raise errors.UnsupportedOperationError(f'TransactionType {tx_type.value} not supported for batches.')
+            return self.__send_web3_transaction(tx)
+
+        if self._transfer_strategy is TransferStrategy.user:
+
+            checksummed_contract_address = Web3.toChecksumAddress(self.token.contract_address)
+            # fetch a raw_tx simply to be able to get a nonce value
+            raw_tx = self.api.get_raw_transaction(self.checksum_address, to_array[0], amount_array[0], checksummed_contract_address, tx_type)
+            return send(raw_tx['nonce'])
+        elif self._transfer_strategy is TransferStrategy.brand:
+            return self.__send_retryable_transaction(send)
+
 
 
 

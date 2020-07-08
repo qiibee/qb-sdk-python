@@ -22,3 +22,6 @@ class ConflictError(QiibeeError):
 
 class ServerResponseParseError(QiibeeError):
     pass
+
+class UnsupportedOperationError(QiibeeError):
+    pass
